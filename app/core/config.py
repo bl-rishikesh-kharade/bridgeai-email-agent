@@ -25,19 +25,15 @@ class Settings(BaseSettings):
     oauth_token_path: str = "token.json"
     oauth_scopes: list[str] = [
         "https://www.googleapis.com/auth/gmail.readonly",
-        "https://www.googleapis.com/auth/tasks",
     ]
 
     # Timeouts (seconds)
     request_timeout: float = Field(default=30.0, gt=0, le=120)
     gemini_timeout: float = Field(default=60.0, gt=0, le=300)
     max_email_body_chars: int = Field(default=30000, ge=1000, le=100000)
-    calendar_enabled: bool = False
-
     # Limits
     max_email_list_limit: int = Field(default=100, ge=1, le=500)
     default_email_list_limit: int = Field(default=50, ge=1, le=100)
-    max_email_filter_scan: int = Field(default=20, ge=1, le=20)
 
     @field_validator("log_level")
     @classmethod

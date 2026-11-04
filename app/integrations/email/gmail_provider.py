@@ -1,7 +1,10 @@
 """Read-only Gmail access for the local single-user application."""
 import base64
+import logging
 from datetime import datetime, timezone
 from email.utils import getaddresses
+from urllib.parse import quote, urlencode
+from app.core.logger import log_event
 from app.integrations.google.oauth import GoogleOAuthManager
 from app.schemas.email import Email
 
@@ -15,14 +18,15 @@ class GmailAuthorizationError(GmailProviderError):
 
 
 class GmailEmailProvider:
-    FILTER_QUERIES = {
-        "important_unread": "is:unread is:important to:me",
-        "unread": "is:unread",
+    FILTER_LABEL_IDS = {
+        "important_unread": ["UNREAD", "IMPORTANT"],
     }
+    RECENT_QUERY = "newer_than:2d"
 
     def __init__(self, service=None, service_factory=None):
         self._service = service
         self._service_factory = service_factory
+        self._account_email: str | None = None
 
     @property
     def _gmail(self):
@@ -82,7 +86,8 @@ class GmailEmailProvider:
             received_at = datetime.fromtimestamp(int(internal_date) / 1000, tz=timezone.utc) if internal_date else None
         except (ValueError, TypeError, OSError):
             received_at = None
-        return Email(id=message_id, provider_message_id=message_id, sender=sender,
+        return Email(id=message_id, provider_message_id=message_id,
+                     thread_id=raw.get("threadId") or message_id, sender=sender,
                      receiver=receiver, subject=headers.get("subject", "(no subject)"),
                      body=cls._body(raw["payload"]), is_read="UNREAD" not in labels,
                      received_at=received_at, labels=labels)
@@ -100,7 +105,10 @@ class GmailEmailProvider:
             raise GmailProviderError("Gmail message retrieval failed.") from exc
         return self.map_message(raw)
 
-    def list_emails(self, limit: int = 50, *, query: str | None = None) -> list[Email]:
+    def list_emails(
+        self, limit: int = 50, *, query: str | None = None,
+        label_ids: list[str] | None = None,
+    ) -> list[Email]:
         if not 1 <= limit <= 500:
             raise ValueError("Email list limit must be between 1 and 500.")
         try:
@@ -110,16 +118,31 @@ class GmailEmailProvider:
                 args = {"userId": "me", "maxResults": min(100, limit - len(refs)), "pageToken": page_token}
                 if query:
                     args["q"] = query
+                if label_ids:
+                    args["labelIds"] = label_ids
                 result = self._gmail.users().messages().list(**args).execute()
                 refs.extend(result.get("messages", []))
                 page_token = result.get("nextPageToken")
                 if not page_token:
                     break
             messages = []
+            skipped = 0
             for ref in refs[:limit]:
-                email = self.get_email(ref.get("id", ""))
+                try:
+                    email = self.get_email(ref.get("id", ""))
+                except GmailProviderError as exc:
+                    if exc.__cause__ is not None:
+                        raise
+                    log_event(
+                        "gmail.message.skipped", level=logging.WARNING,
+                        reason="malformed_message_metadata",
+                    )
+                    skipped += 1
+                    continue
                 if email is not None:
                     messages.append(email)
+            if skipped and not messages:
+                raise GmailProviderError("Gmail messages could not be parsed.")
             return messages
         except GmailProviderError:
             raise
@@ -127,10 +150,47 @@ class GmailEmailProvider:
             raise GmailProviderError("Gmail message listing failed.") from exc
 
     def list_filtered_emails(self, filter_id: str, limit: int = 20) -> list[Email]:
-        query = self.FILTER_QUERIES.get(filter_id)
-        if query is None:
-            raise ValueError("Unsupported email filter.")
-        return self.list_emails(limit, query=query)
+        if filter_id == "important_unread":
+            return self.list_emails(limit, label_ids=self.FILTER_LABEL_IDS[filter_id])
+        if filter_id == "important_unread_last_48_hours":
+            return self.list_emails(
+                limit, query=self.RECENT_QUERY,
+                label_ids=self.FILTER_LABEL_IDS["important_unread"],
+            )
+        raise ValueError("Unsupported email filter.")
+
+    def has_more_filtered_emails(self, filter_id: str, threshold: int = 100) -> bool:
+        if filter_id != "important_unread" or threshold < 1:
+            raise ValueError("Unsupported email filter or threshold.")
+        try:
+            result = self._gmail.users().messages().list(
+                userId="me", labelIds=self.FILTER_LABEL_IDS[filter_id], maxResults=threshold + 1,
+            ).execute()
+            return len(result.get("messages", [])) > threshold
+        except GmailProviderError:
+            raise
+        except Exception as exc:
+            raise GmailProviderError("Gmail message listing failed.") from exc
+
+    def get_account_email(self) -> str:
+        if self._account_email:
+            return self._account_email
+        try:
+            profile = self._gmail.users().getProfile(userId="me").execute()
+            address = str(profile.get("emailAddress", "")).strip()
+            if not address:
+                raise GmailProviderError("Google did not return the connected account address.")
+            self._account_email = address
+            return address
+        except GmailProviderError:
+            raise
+        except Exception as exc:
+            raise GmailProviderError("The connected Gmail account could not be identified.") from exc
+
+    def gmail_url(self, email: Email) -> str:
+        thread_id = email.thread_id or email.id
+        account = urlencode({"authuser": self.get_account_email()})
+        return f"https://mail.google.com/mail/?{account}#all/{quote(thread_id, safe='')}"
 
     def search_emails(self, query: str, limit: int = 10, *, sender_only: bool = False) -> list[Email]:
         clean_query = " ".join(str(query).split()).replace('"', "").replace("\\", "")

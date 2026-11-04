@@ -18,7 +18,6 @@ dependencies = [
   "google-api-python-client",
   "google-auth-httplib2",
   "google-auth-oauthlib",
-  "langgraph",
   "email-validator",
 ]
 
@@ -34,15 +33,12 @@ bridgeai = "app.cli:main"
 [tool.setuptools]
 packages = [
   "app",
-  "app.agents",
   "app.api",
   "app.api.routes",
   "app.core",
   "app.integrations",
   "app.integrations.email",
   "app.integrations.google",
-  "app.integrations.calendar",
-  "app.integrations.tasks",
   "app.schemas",
   "app.services",
   "app.prompts",

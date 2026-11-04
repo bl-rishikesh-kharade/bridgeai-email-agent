@@ -15,19 +15,14 @@ def email(email_id, *, is_read=False, labels=None, sender=None, subject=None, bo
     )
 
 
-def test_fake_email_adapter_returns_unread_candidates_for_semantic_filters():
+def test_fake_email_adapter_returns_only_gmail_important_unread_messages():
     provider = FakeEmailProvider([
         email("important", labels=["IMPORTANT"]),
         email("read-important", is_read=True, labels=["IMPORTANT"]),
-        email("escalated", labels=["Escalated"]),
-        email("customer", labels=["Customer"]),
         email("ordinary"),
     ])
 
     assert [item.id for item in provider.list_filtered_emails("important_unread")] == ["important"]
-    assert [item.id for item in provider.list_filtered_emails("unread")] == [
-        "important", "escalated", "customer", "ordinary",
-    ]
 
 
 def test_local_email_search_matches_sender_or_message_content():

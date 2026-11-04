@@ -1,100 +1,19 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BridgeAI Email Assistant</title>
-  <style>
-    :root { color-scheme: light; --ink:#172638; --muted:#65758a; --line:#dce4ed; --blue:#2857d8; --wash:#f3f6fa; }
-    * { box-sizing:border-box } body { margin:0; background:var(--wash); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif }
-    header { padding:20px max(24px,calc((100% - 1180px)/2)); background:#fff; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center }
-    h1 { font-size:20px; margin:0 } header span { color:var(--muted); font-size:13px }
-    main { max-width:1180px; padding:24px; margin:auto; display:grid; grid-template-columns:minmax(0,1.1fr) minmax(340px,.9fr); gap:20px }
-    .panel { background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden }
-    .panel-head { padding:17px 20px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center }
-    h2 { font-size:16px; margin:0 } .sub { color:var(--muted); font-size:13px; margin:3px 0 0 }
-    button { border:0; border-radius:8px; padding:9px 13px; background:var(--blue); color:#fff; cursor:pointer; font:inherit; font-size:13px }
-    button.secondary { color:var(--ink); background:#eaf0f8 } button:hover { filter:brightness(.96) } button:disabled { opacity:.55; cursor:wait }
-    #emails,#tasks { padding:8px 20px 18px; max-height:520px; overflow:auto }
-    .email,.task { padding:14px 0; border-bottom:1px solid var(--line) } .email:last-child,.task:last-child { border:0 }
-    .email-title { font-weight:650; overflow-wrap:anywhere } .meta { color:var(--muted); font-size:12px; margin-top:3px }
-    .actions { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap } .actions button { padding:7px 10px; font-size:12px }
-    .right { display:grid; gap:20px; align-content:start }
-    #chatlog { height:300px; overflow:auto; padding:16px 20px; display:flex; flex-direction:column; gap:10px }
-    .bubble { border-radius:10px; padding:10px 12px; max-width:94%; white-space:pre-wrap; overflow-wrap:anywhere }
-    .user { background:#eaf0ff; align-self:flex-end } .assistant { background:#f1f4f7; align-self:flex-start }
-    form { padding:0 20px 18px } textarea { width:100%; resize:vertical; min-height:70px; border:1px solid var(--line); border-radius:8px; padding:10px; font:inherit }
-    .sendrow { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:9px }
-    #status { color:var(--muted); font-size:12px; min-height:18px } .empty { color:var(--muted); padding:12px 0 }
-    @media(max-width:800px) { main { grid-template-columns:1fr; padding:14px } header { padding:16px 18px } }
-  </style>
-</head>
-<body>
-  <header><h1>BridgeAI Email Assistant</h1><span>Private to this computer</span></header>
-  <main>
-    <section class="panel">
-      <div class="panel-head"><div><h2>Recent emails</h2><p class="sub">Your mailbox stays with your Google account.</p></div><button id="refresh">Refresh</button></div>
-      <div id="emails"><div class="empty">Loading emails…</div></div>
-    </section>
-    <div class="right">
-      <section class="panel">
-        <div class="panel-head"><div><h2>Ask BridgeAI</h2><p class="sub">Summarize email, find action items, or list recent mail.</p></div></div>
-        <div id="chatlog"><div class="bubble assistant">Hi! Try “Show the last five emails” or ask me to summarize an email.</div></div>
-        <form id="chatform"><textarea id="prompt" maxlength="4000" placeholder="Ask about your email…" required></textarea><div class="sendrow"><span id="status"></span><button id="send" type="submit">Send</button></div></form>
-      </section>
-      <section class="panel">
-        <div class="panel-head"><div><h2>BridgeAI tasks</h2><p class="sub">Tasks are stored in your Google Tasks account.</p></div><button class="secondary" id="refreshTasks">Refresh</button></div>
-        <div id="tasks"><div class="empty">Loading tasks…</div></div>
-      </section>
-    </div>
-  </main>
-<script>
-  const byId = id => document.getElementById(id);
-  const threadId = sessionStorage.getItem('bridgeai-thread') || crypto.randomUUID();
-  sessionStorage.setItem('bridgeai-thread', threadId);
-  function empty(target, text) { target.replaceChildren(Object.assign(document.createElement('div'), {className:'empty',textContent:text})); }
-  async function api(path, options={}) {
-    const response = await fetch(path, {headers:{'Content-Type':'application/json',...(options.headers||{})},...options});
-    if (!response.ok) { let message = `Request failed (${response.status})`; try { message = (await response.json()).detail || message; } catch {} throw new Error(message); }
-    return response.json();
-  }
-  function ask(text) { byId('prompt').value = text; byId('chatform').requestSubmit(); }
-  async function loadEmails() {
-    const target=byId('emails'); empty(target,'Loading…');
-    try {
-      const emails=await api('/emails?limit=10'); target.replaceChildren();
-      if (!emails.length) return empty(target,'No emails found. Connect your Google account and refresh.');
-      for (const email of emails) {
-        const row=document.createElement('article'); row.className='email';
-        const title=document.createElement('div'); title.className='email-title'; title.textContent=email.subject || '(no subject)';
-        const meta=document.createElement('div'); meta.className='meta'; meta.textContent=`From ${email.sender}${email.received_at ? ' · '+new Date(email.received_at).toLocaleString() : ''}`;
-        const actions=document.createElement('div'); actions.className='actions';
-        for (const [label,phrase,style] of [['Summarize','Summarize email ','' ],['Analyze & create eligible tasks','Analyze email and create a task if action is required for email ','secondary']]) {
-          const button=document.createElement('button'); button.textContent=label; if(style) button.className=style;
-          button.addEventListener('click',()=>ask(phrase+email.id)); actions.append(button);
-        }
-        row.append(title,meta,actions); target.append(row);
-      }
-    } catch(error) { empty(target,error.message); }
-  }
-  async function loadTasks() {
-    const target=byId('tasks'); empty(target,'Loading…');
-    try {
-      const tasks=await api('/tasks'); target.replaceChildren();
-      if (!tasks.length) return empty(target,'No BridgeAI tasks yet.');
-      for(const task of tasks) { const row=document.createElement('article'); row.className='task'; const title=document.createElement('div'); title.className='email-title'; title.textContent=task.title; const meta=document.createElement('div'); meta.className='meta'; meta.textContent=`${task.status} · ${task.priority}`; row.append(title,meta); target.append(row); }
-    } catch(error) { empty(target,error.message); }
-  }
-  function bubble(text,kind) { const node=document.createElement('div'); node.className=`bubble ${kind}`; node.textContent=text; byId('chatlog').append(node); node.scrollIntoView({block:'end'}); }
-  byId('chatform').addEventListener('submit',async event=>{
-    event.preventDefault(); const input=byId('prompt'); const message=input.value.trim(); if(!message)return;
-    input.value=''; bubble(message,'user'); byId('send').disabled=true; byId('status').textContent='Working…';
-    try { const result=await api('/agent/chat',{method:'POST',body:JSON.stringify({message,thread_id:threadId})}); bubble(result.response,'assistant'); await loadTasks(); }
-    catch(error) { bubble(error.message,'assistant'); }
-    finally { byId('send').disabled=false; byId('status').textContent=''; input.focus(); }
-  });
-  byId('refresh').addEventListener('click',loadEmails); byId('refreshTasks').addEventListener('click',loadTasks);
-  loadEmails(); loadTasks();
-</script>
-</body>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BridgeAI Email Agent</title>
+    <style>
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f7fb; color: #26364b; font: 16px system-ui, sans-serif; }
+      main { max-width: 460px; margin: 24px; padding: 32px; border: 1px solid #e5eaf2; border-radius: 18px; background: white; text-align: center; }
+      p { color: #728198; line-height: 1.6; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>BridgeAI Email Agent</h1>
+      <p>The chat interface has not been built into this installation. Rebuild the React interface from the <code>frontend</code> folder, then restart BridgeAI.</p>
+    </main>
+  </body>
 </html>

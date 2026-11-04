@@ -11,10 +11,8 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     proxy: {
+      "/auth": "http://127.0.0.1:8000",
       "/agent": "http://127.0.0.1:8000",
-      "/emails": "http://127.0.0.1:8000",
-      "/tasks": "http://127.0.0.1:8000",
-      "/meetings": "http://127.0.0.1:8000",
       "/health": "http://127.0.0.1:8000",
     },
   },

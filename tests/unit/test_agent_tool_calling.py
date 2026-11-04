@@ -48,15 +48,3 @@ def test_agent_turn_can_disable_tools_after_workflow_limit(monkeypatch):
 
     assert turn.text == "Please narrow the request."
     assert models.calls[0]["config"].tools is None
-
-
-def test_semantic_filter_classification_still_uses_untrusted_data_prompt(monkeypatch):
-    response = type("Response", (), {"text": '{"matching_indices": [1, 21]}'})()
-    models = FakeModels(response)
-    monkeypatch.setattr(ai_service.genai, "Client", lambda **_kwargs: type("Client", (), {"models": models})())
-    service = ai_service.AIService(api_key="test-only")
-
-    result = service.classify_email_filter([{"sender": "person@example.com", "subject": "Outage", "body": "Please escalate."}], "escalated_unread")
-
-    assert result.matching_indices == [1]
-    assert "untrusted email content" in models.calls[0]["contents"]

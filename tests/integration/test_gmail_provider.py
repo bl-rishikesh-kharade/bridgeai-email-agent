@@ -116,22 +116,18 @@ def test_list_follows_next_page_token():
     assert messages.calls == [None, "next"]
 
 
-def test_filtered_email_queries_use_fixed_gmail_searches():
+def test_important_unread_filter_uses_gmail_system_labels():
     class QueryMessages(Messages):
         def __init__(self):
-            self.query = None
+            self.labels = None
 
         def list(self, **kwargs):
-            self.query = kwargs.get("q")
+            self.labels = kwargs.get("labelIds")
             return Request({"messages": []})
 
-    for filter_id, expected in {
-        "important_unread": "is:unread is:important to:me",
-        "unread": "is:unread",
-    }.items():
-        messages = QueryMessages()
-        GmailEmailProvider(Service(messages)).list_filtered_emails(filter_id)
-        assert messages.query == expected
+    messages = QueryMessages()
+    GmailEmailProvider(Service(messages)).list_filtered_emails("important_unread")
+    assert messages.labels == ["UNREAD", "IMPORTANT"]
 
 
 def test_search_emails_builds_sender_or_full_text_search():

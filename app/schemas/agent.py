@@ -5,22 +5,18 @@ from pydantic import BaseModel, Field
 
 ChatFilterId = Literal[
     "important_unread",
-    "escalated_unread",
-    "customer_unread",
-    "my_tasks",
-    "my_meetings",
 ]
 
 
 class AgentChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
-    thread_id: str = Field(default="default", min_length=1, max_length=128)
     filter_id: ChatFilterId | None = None
     selected_email_id: str | None = Field(default=None, max_length=256)
 
 
 class ChatEmailOption(BaseModel):
     id: str = Field(max_length=256)
+    gmail_url: str | None = None
     subject: str = Field(max_length=1000)
     sender: str = Field(max_length=320)
     received_at: datetime | None = None
@@ -32,7 +28,7 @@ class ChatEmailOption(BaseModel):
 
 
 class AgentChatResponse(BaseModel):
-    thread_id: str
     response: str
     current_email_id: str | None = None
     email_options: list[ChatEmailOption] = Field(default_factory=list)
+    used_recent_window: bool = False

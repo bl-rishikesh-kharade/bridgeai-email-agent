@@ -5,6 +5,7 @@ from pydantic import BaseModel, EmailStr, Field
 class Email(BaseModel):
     id: str
     provider_message_id: str
+    thread_id: str | None = None
     sender: EmailStr
     receiver: EmailStr
     subject: str

@@ -1,1 +1,0 @@
-"""Calendar provider adapters."""

@@ -7,11 +7,7 @@ from google.genai import types
 from app.core.config import settings
 from app.core.logger import log_event
 from app.schemas.ai_analysis import AIAnalysis
-from app.schemas.email_filter import EmailFilterClassification
-from app.schemas.email_triage import EmailTriageResult
 from app.prompts.analyze_email_prompt import build_analyze_email_prompt
-from app.prompts.email_filter_prompt import build_email_filter_prompt
-from app.prompts.email_triage_prompt import build_email_triage_prompt
 
 
 @dataclass(frozen=True)
@@ -42,21 +38,21 @@ class AIService:
 
     def _generate_content(self, operation: str, prompt, config=None):
         started = perf_counter()
-        log_event("model.request.started", workflow_step=operation, model=settings.gemini_model)
+        log_event("model.request.started", operation=operation, model=settings.gemini_model)
         try:
             response = self.client.models.generate_content(
                 model=settings.gemini_model, contents=prompt, config=config,
             )
         except Exception as exc:
             log_event(
-                "model.request.failed", level=logging.ERROR, workflow_step=operation,
+                "model.request.failed", level=logging.ERROR, operation=operation,
                 model=settings.gemini_model, error_type=type(exc).__name__,
                 status_code=getattr(exc, "code", None), api_status=getattr(exc, "status", None),
                 duration_ms=round((perf_counter() - started) * 1000, 2),
             )
             raise
         log_event(
-            "model.request.completed", workflow_step=operation,
+            "model.request.completed", operation=operation,
             model=settings.gemini_model,
             duration_ms=round((perf_counter() - started) * 1000, 2),
         )
@@ -100,34 +96,6 @@ class AIService:
         return AgentTurn(text=(getattr(response, "text", None) or "").strip(),
                          tool_calls=calls, model_content=model_content)
 
-    def classify_email_filter(self, emails: list[dict[str, str]], filter_id: str) -> EmailFilterClassification:
-        prompt = build_email_filter_prompt(emails, filter_id)
-        response = self._generate_content(
-            "email_filter_classification", prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": EmailFilterClassification,
-            },
-        )
-        result = EmailFilterClassification.model_validate_json(response.text)
-        bounded_count = min(len(emails), 20)
-        result.matching_indices = sorted({
-            index for index in result.matching_indices if 1 <= index <= bounded_count
-        })
-        return result
-
-    def triage_emails(self, emails: list[dict[str, str]]) -> EmailTriageResult:
-        prompt = build_email_triage_prompt(emails)
-        response = self._generate_content(
-            "email_triage", prompt,
-            config={"response_mime_type": "application/json", "response_schema": EmailTriageResult},
-        )
-        result = EmailTriageResult.model_validate_json(response.text)
-        valid_indices = set(range(1, min(len(emails), 20) + 1))
-        result.emails = [item for item in result.emails if item.index in valid_indices]
-        return result
-
-
 _default_service: AIService | None = None
 
 
@@ -146,9 +114,4 @@ def agent_turn(messages, tool_declarations: list[dict], system_instruction: str,
     return get_ai_service().agent_turn(messages, tool_declarations, system_instruction, tools_enabled=tools_enabled)
 
 
-def classify_email_filter(emails: list[dict[str, str]], filter_id: str) -> EmailFilterClassification:
-    return get_ai_service().classify_email_filter(emails, filter_id)
-
-
-def triage_emails(emails: list[dict[str, str]]) -> EmailTriageResult:
-    return get_ai_service().triage_emails(emails)
+\n

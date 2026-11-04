@@ -15,10 +15,11 @@ from app.core.config import settings
 
 
 _SAFE_FIELDS = (
-    "event", "workflow_step", "duration_ms", "intent", "route",
+    "event", "step", "operation", "duration_ms",
     "result_count", "error_type", "status_code", "api_status", "model",
-    "environment", "decision", "approved", "priority", "task_created", "task_count",
+    "environment",
     "log_file", "tool_name", "reason",
+    "cause_type", "winerror", "errno",
 )
 
 
