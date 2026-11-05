@@ -25,6 +25,8 @@ class ChatEmailOption(BaseModel):
     gmail_url: str | None = None
     subject: str = Field(max_length=1000)
     sender: str = Field(max_length=320)
+    receiver: str | None = Field(default=None, max_length=320)
+    body_snippet: str | None = Field(default=None, max_length=500)
     received_at: datetime | None = None
     summary: str | None = Field(default=None, max_length=600)
     priority: Literal["Critical", "High", "Medium", "Low"] | None = None

@@ -29,6 +29,8 @@ def build_router(chat_service, email_provider):
                     "gmail_url": email_provider.gmail_url(email),
                     "subject": email.subject,
                     "sender": str(email.sender),
+                    "receiver": str(email.receiver),
+                    "body_snippet": email.body[:300].strip() if email.body else None,
                     "received_at": email.received_at,
                     "summary": reviews_by_email_id.get(email.id, {}).get("summary"),
                     "priority": reviews_by_email_id.get(email.id, {}).get("priority"),

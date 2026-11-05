@@ -30,15 +30,18 @@ class FakeEmailProvider:
         if filter_id in {"important_unread", "important_unread_last_48_hours"}:
             matches = [email for email in self._emails.values()
                        if not email.is_read and any(label.casefold() == "important" for label in email.labels)]
+        elif filter_id in {"unread", "unread_last_48_hours"}:
+            matches = [email for email in self._emails.values() if not email.is_read]
         else:
             raise ValueError("Unsupported fake email filter.")
         return matches[:limit]
 
     def has_more_filtered_emails(self, filter_id: str, threshold: int = 100) -> bool:
-        if filter_id != "important_unread":
-            raise ValueError("Unsupported fake email filter.")
-        matches = [email for email in self._emails.values()
-                   if not email.is_read and any(label.casefold() == "important" for label in email.labels)]
+        if "important" in filter_id:
+            matches = [email for email in self._emails.values()
+                       if not email.is_read and any(label.casefold() == "important" for label in email.labels)]
+        else:
+            matches = [email for email in self._emails.values() if not email.is_read]
         return len(matches) > threshold
 
     def get_account_email(self) -> str:

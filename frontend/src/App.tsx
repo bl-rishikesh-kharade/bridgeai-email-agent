@@ -8,7 +8,10 @@ type ChatEmailOption = {
   gmail_url?: string | null;
   subject: string;
   sender: string;
+  receiver?: string | null;
+  body_snippet?: string | null;
   received_at?: string | null;
+  priority?: "Critical" | "High" | "Medium" | "Low" | null;
 };
 type ChatResponse = {
   response: string;
@@ -236,8 +239,20 @@ function App() {
                           {message.emailOptions.map((email) => (
                             <article className="email-option" key={email.id}>
                               <div className="email-option-copy">
-                                <strong>{email.subject || "(No subject)"}</strong>
-                                <span>{email.sender}{email.received_at ? ` · ${new Date(email.received_at).toLocaleString()}` : ""}</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                                  {email.priority && (
+                                    <span className={`priority-badge priority-${email.priority.toLowerCase()}`}>
+                                      {email.priority}
+                                    </span>
+                                  )}
+                                  <strong>{email.subject || "(No subject)"}</strong>
+                                </div>
+                                <span>
+                                  From: {email.sender}
+                                  {email.receiver ? ` · To: ${email.receiver}` : ""}
+                                  {email.received_at ? ` · ${new Date(email.received_at).toLocaleString()}` : ""}
+                                </span>
+                                {email.body_snippet && <p className="email-option-summary">{email.body_snippet}</p>}
                               </div>
                               {email.gmail_url && <a className="email-view-link" href={email.gmail_url} target="_blank" rel="noopener noreferrer">View in Gmail</a>}
                             </article>

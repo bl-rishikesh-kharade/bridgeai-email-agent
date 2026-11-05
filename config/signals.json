@@ -1,0 +1,100 @@
+{
+  "user_name": "Rishikesh",
+  "user_emails": [
+    "rishikesh.kharade@bridgelabz.com"
+  ],
+  "importance_strategy": "hybrid",
+  "signals": {
+    "critical": {
+      "sender_keywords": [
+        "accounts.google.com",
+        "security",
+        "alert",
+        "admin",
+        "no-reply@accounts.google.com"
+      ],
+      "subject_keywords": [
+        "security alert",
+        "critical",
+        "urgent",
+        "immediate action",
+        "unauthorized",
+        "compromised",
+        "emergency"
+      ],
+      "body_keywords": [
+        "security alert",
+        "unrecognized device",
+        "password reset",
+        "suspicious activity",
+        "immediate attention"
+      ]
+    },
+    "high": {
+      "require_user_mention": false,
+      "sender_keywords": [
+        "chitkara.edu.in",
+        "bridgelabz.com"
+      ],
+      "subject_keywords": [
+        "fee",
+        "fee notification",
+        "hostel fee",
+        "st-ii",
+        "rubrics",
+        "evaluation",
+        "deadline",
+        "due date",
+        "circular",
+        "exam",
+        "assignment",
+        "interview",
+        "offer",
+        "invoice",
+        "payment"
+      ],
+      "body_keywords": [
+        "last date",
+        "due date",
+        "pay before",
+        "mandatory",
+        "action required",
+        "submission deadline",
+        "evaluation schedule"
+      ]
+    },
+    "medium": {
+      "subject_keywords": [
+        "update",
+        "circular",
+        "announcement",
+        "schedule",
+        "meeting",
+        "sync",
+        "invitation"
+      ],
+      "body_keywords": [
+        "please note",
+        "for your information",
+        "fyi",
+        "reminder"
+      ]
+    },
+    "low": {
+      "subject_keywords": [
+        "newsletter",
+        "digest",
+        "weekly",
+        "monthly",
+        "promotion",
+        "webinar"
+      ],
+      "body_keywords": [
+        "unsubscribe",
+        "view in browser",
+        "marketing",
+        "automated message"
+      ]
+    }
+  }
+}

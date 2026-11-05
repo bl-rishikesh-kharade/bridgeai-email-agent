@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.core.config import settings
 from app.core.logger import log_event
 from app.schemas.ai_analysis import AIAnalysis
+from app.services.email_signals import EmailSignalEngine
 
 
 class _Args(BaseModel):
@@ -52,9 +53,10 @@ TOOL_DECLARATIONS = [
 
 
 class EmailAgentTools:
-    def __init__(self, email_provider, *, analyzer):
+    def __init__(self, email_provider, *, analyzer, signal_engine: EmailSignalEngine | None = None):
         self.email_provider = email_provider
         self.analyzer = analyzer
+        self.signal_engine = signal_engine or EmailSignalEngine(settings.signals_config_path)
         self._handlers: dict[str, tuple[type[_Args], Callable[..., ToolOutcome]]] = {
             "list_recent_emails": (ListEmailsArgs, self._list_emails),
             "search_emails": (SearchEmailsArgs, self._search_emails),
@@ -100,16 +102,30 @@ class EmailAgentTools:
         return args.email_id or request_context.get("selected_email_id") or request_context.get("current_email_id")
 
     def _list_emails(self, args: ListEmailsArgs, _request_context: dict[str, Any]) -> ToolOutcome:
-        emails = self.email_provider.list_emails(min(args.limit, settings.max_email_list_limit))
-        return ToolOutcome({"count": len(emails), "emails": [self._email_brief(email) for email in emails]},
-                           emails=emails, current_email_id=emails[0].id if emails else None,
-                           clear_current_email=not emails)
+        raw = self.email_provider.list_emails(min(args.limit, settings.max_email_list_limit))
+        ranked = self.signal_engine.filter_and_rank_emails(raw, only_important=False, limit=args.limit)
+        emails = [item[0] for item in ranked]
+        reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked]
+        return ToolOutcome(
+            {"count": len(emails), "emails": [self._email_brief(email) for email in emails]},
+            emails=emails,
+            reviews=reviews,
+            current_email_id=emails[0].id if emails else None,
+            clear_current_email=not emails,
+        )
 
     def _search_emails(self, args: SearchEmailsArgs, _request_context: dict[str, Any]) -> ToolOutcome:
-        emails = self.email_provider.search_emails(args.query, limit=args.limit, sender_only=args.sender_only)
-        return ToolOutcome({"query": args.query, "count": len(emails), "emails": [self._email_brief(email) for email in emails]},
-                           emails=emails, current_email_id=emails[0].id if emails else None,
-                           clear_current_email=not emails)
+        raw = self.email_provider.search_emails(args.query, limit=args.limit, sender_only=args.sender_only)
+        ranked = self.signal_engine.filter_and_rank_emails(raw, only_important=False, limit=args.limit)
+        emails = [item[0] for item in ranked]
+        reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked]
+        return ToolOutcome(
+            {"query": args.query, "count": len(emails), "emails": [self._email_brief(email) for email in emails]},
+            emails=emails,
+            reviews=reviews,
+            current_email_id=emails[0].id if emails else None,
+            clear_current_email=not emails,
+        )
 
     def _get_email(self, args: EmailIdArgs, request_context: dict[str, Any]) -> ToolOutcome:
         email_id = self._resolve_email_id(args, request_context)
@@ -133,13 +149,79 @@ class EmailAgentTools:
         return ToolOutcome({"review": review}, emails=[email], reviews=[review], current_email_id=email.id)
 
     def _filter_unread(self, args: FilterArgs, _request_context: dict[str, Any]) -> ToolOutcome:
+        strategy = getattr(settings, "importance_strategy", "hybrid")
         count_unread = getattr(self.email_provider, "has_more_filtered_emails", None)
-        use_recent_window = bool(count_unread("important_unread", threshold=100)) if count_unread else False
-        query_filter = "important_unread_last_48_hours" if use_recent_window else "important_unread"
-        emails = self.email_provider.list_filtered_emails(query_filter, limit=args.limit)
+
+        use_recent_window = False
+        if strategy in {"signals", "hybrid"}:
+            if count_unread:
+                use_recent_window = bool(count_unread("unread", threshold=100))
+            query_filter = "unread_last_48_hours" if use_recent_window else "unread"
+            fetch_limit = min(max(args.limit * 5, 50), 100)
+            try:
+                unread_emails = self.email_provider.list_filtered_emails(query_filter, limit=fetch_limit)
+            except Exception:
+                unread_emails = self.email_provider.list_emails(limit=fetch_limit)
+
+            ranked = self.signal_engine.filter_and_rank_emails(unread_emails, only_important=True, limit=args.limit)
+
+            if ranked:
+                emails = [item[0] for item in ranked]
+                reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked]
+                return ToolOutcome(
+                    {
+                        "filter": args.filter_id,
+                        "count": len(emails),
+                        "strategy": "signals",
+                        "used_recent_window": use_recent_window,
+                    },
+                    emails=emails,
+                    reviews=reviews,
+                    current_email_id=emails[0].id if emails else None,
+                    clear_current_email=not emails,
+                    used_recent_window=use_recent_window,
+                )
+
+            # Hybrid fallback: if custom signals found 0 emails, fall back to Gmail's native important_unread
+            if strategy == "hybrid":
+                if count_unread:
+                    use_recent_window = bool(count_unread("important_unread", threshold=100))
+                gmail_filter = "important_unread_last_48_hours" if use_recent_window else "important_unread"
+                gmail_emails = self.email_provider.list_filtered_emails(gmail_filter, limit=args.limit)
+                ranked_gmail = self.signal_engine.filter_and_rank_emails(gmail_emails, only_important=False, limit=args.limit)
+                emails = [item[0] for item in ranked_gmail]
+                reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked_gmail]
+                return ToolOutcome(
+                    {
+                        "filter": args.filter_id,
+                        "count": len(emails),
+                        "strategy": "gmail_fallback",
+                        "used_recent_window": use_recent_window,
+                    },
+                    emails=emails,
+                    reviews=reviews,
+                    current_email_id=emails[0].id if emails else None,
+                    clear_current_email=not emails,
+                    used_recent_window=use_recent_window,
+                )
+
+        # Strategy == "gmail"
+        if count_unread:
+            use_recent_window = bool(count_unread("important_unread", threshold=100))
+        gmail_filter = "important_unread_last_48_hours" if use_recent_window else "important_unread"
+        gmail_emails = self.email_provider.list_filtered_emails(gmail_filter, limit=args.limit)
+        ranked_gmail = self.signal_engine.filter_and_rank_emails(gmail_emails, only_important=False, limit=args.limit)
+        emails = [item[0] for item in ranked_gmail]
+        reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked_gmail]
         return ToolOutcome(
-            {"filter": args.filter_id, "count": len(emails), "used_recent_window": use_recent_window},
+            {
+                "filter": args.filter_id,
+                "count": len(emails),
+                "strategy": "gmail",
+                "used_recent_window": use_recent_window,
+            },
             emails=emails,
+            reviews=reviews,
             current_email_id=emails[0].id if emails else None,
             clear_current_email=not emails,
             used_recent_window=use_recent_window,

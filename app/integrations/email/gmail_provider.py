@@ -20,6 +20,7 @@ class GmailAuthorizationError(GmailProviderError):
 class GmailEmailProvider:
     FILTER_LABEL_IDS = {
         "important_unread": ["UNREAD", "IMPORTANT"],
+        "unread": ["UNREAD"],
     }
     RECENT_QUERY = "newer_than:2d"
 
@@ -162,21 +163,27 @@ class GmailEmailProvider:
             raise GmailProviderError("Gmail message listing failed.") from exc
 
     def list_filtered_emails(self, filter_id: str, limit: int = 20) -> list[Email]:
-        if filter_id == "important_unread":
+        if filter_id in self.FILTER_LABEL_IDS:
             return self.list_emails(limit, label_ids=self.FILTER_LABEL_IDS[filter_id])
         if filter_id == "important_unread_last_48_hours":
             return self.list_emails(
                 limit, query=self.RECENT_QUERY,
                 label_ids=self.FILTER_LABEL_IDS["important_unread"],
             )
+        if filter_id == "unread_last_48_hours":
+            return self.list_emails(
+                limit, query=self.RECENT_QUERY,
+                label_ids=self.FILTER_LABEL_IDS["unread"],
+            )
         raise ValueError("Unsupported email filter.")
 
     def has_more_filtered_emails(self, filter_id: str, threshold: int = 100) -> bool:
-        if filter_id != "important_unread" or threshold < 1:
+        base_filter = "unread" if "unread" in filter_id and "important" not in filter_id else "important_unread"
+        if base_filter not in self.FILTER_LABEL_IDS or threshold < 1:
             raise ValueError("Unsupported email filter or threshold.")
         try:
             result = self._gmail.users().messages().list(
-                userId="me", labelIds=self.FILTER_LABEL_IDS[filter_id], maxResults=threshold + 1,
+                userId="me", labelIds=self.FILTER_LABEL_IDS[base_filter], maxResults=threshold + 1,
             ).execute()
             return len(result.get("messages", [])) > threshold
         except GmailProviderError:

@@ -86,13 +86,36 @@ class ChatService:
 
         emails = request_context.get("email_results", [])
         resp = request_context.get("response", "")
-        if emails and (not resp or resp == "I couldn't complete that request right now. Please try again."):
-            count = len(emails)
-            request_context["response"] = f"Here {'is the' if count == 1 else f'are the {count}'} email{'s' if count != 1 else ''} found in your mailbox:"
+        if emails:
+            if not resp or resp == "I couldn't complete that request right now. Please try again.":
+                count = len(emails)
+                request_context["response"] = f"Here {'is the' if count == 1 else f'are the {count}'} email{'s' if count != 1 else ''} found in your mailbox:"
+            else:
+                request_context["response"] = self._clean_card_response(resp, len(emails))
 
         request_context.pop("tool_calls", None)
         request_context.pop("messages", None)
         return request_context
+
+    @staticmethod
+    def _clean_card_response(text: str, email_count: int) -> str:
+        import re
+        lines = text.strip().split("\n")
+        kept_lines = []
+        for line in lines:
+            stripped = line.strip()
+            # Discard numbered list lines (e.g. "1. ...", "2) ...") or bullet points ("* ...", "- ...", "• ...")
+            if re.match(r"^(\d+[\.\)]|[\*\-•])\s+", stripped):
+                continue
+            # Discard lines matching formatted email references like "**Subject** from `sender`..."
+            if stripped.startswith("**") and ("from " in stripped or "Received" in stripped):
+                continue
+            if stripped:
+                kept_lines.append(line)
+        cleaned = "\n".join(kept_lines).strip()
+        if not cleaned:
+            cleaned = f"Here {'is the' if email_count == 1 else f'are the {email_count}'} email{'s' if email_count != 1 else ''} found in your mailbox:"
+        return cleaned
 
     @staticmethod
     def _prepare_request(request_context: dict[str, Any]) -> dict[str, Any]:
