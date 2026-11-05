@@ -98,3 +98,36 @@ def test_agent_chat_important_unread_workflow():
         assert data["email_options"][0]["id"] == "imp-1"
         assert data["email_options"][0]["subject"] == "Urgent matter"
         assert "mail.google.com" in data["email_options"][0]["gmail_url"]
+
+
+def test_agent_chat_accepts_history_buffer():
+    from fastapi import FastAPI
+    from app.api.routes.agent import build_router as build_agent_router
+    from app.services.chat_service import build_chat_service
+    from tests.fakes import FakeEmailProvider
+
+    captured = []
+
+    def mock_model_turn(messages, tool_declarations, system_instruction, **kwargs):
+        captured.extend(messages)
+        return type("Turn", (), {"text": "History received", "tool_calls": [], "model_content": None})()
+
+    fake_provider = FakeEmailProvider()
+    chat_service = build_chat_service(fake_provider, model_turn=mock_model_turn)
+    test_app = FastAPI()
+    test_app.include_router(build_agent_router(chat_service, fake_provider))
+
+    with TestClient(test_app) as client:
+        response = client.post("/agent/chat", json={
+            "message": "What did I ask before?",
+            "history": [
+                {"role": "user", "text": "Can you check my inbox?"},
+                {"role": "assistant", "text": "I found 2 emails."},
+            ],
+        })
+        assert response.status_code == 200
+        assert response.json()["response"] == "History received"
+        assert len(captured) == 3
+        assert captured[0].role == "user"
+        assert captured[1].role == "model"
+        assert captured[2].role == "user"

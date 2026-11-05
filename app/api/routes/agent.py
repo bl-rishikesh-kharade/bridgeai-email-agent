@@ -12,6 +12,7 @@ def build_router(chat_service, email_provider):
             "message": request.message,
             "filter_id": request.filter_id,
             "selected_email_id": request.selected_email_id,
+            "history": [turn.model_dump() for turn in request.history],
         })
         reviews_by_email_id = {
             review["email_id"]: review

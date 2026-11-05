@@ -8,10 +8,16 @@ ChatFilterId = Literal[
 ]
 
 
+class ChatHistoryTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    text: str = Field(min_length=1, max_length=4000)
+
+
 class AgentChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     filter_id: ChatFilterId | None = None
     selected_email_id: str | None = Field(default=None, max_length=256)
+    history: list[ChatHistoryTurn] = Field(default_factory=list, max_length=20)
 
 
 class ChatEmailOption(BaseModel):

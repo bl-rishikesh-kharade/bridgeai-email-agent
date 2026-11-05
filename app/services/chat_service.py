@@ -91,7 +91,14 @@ class ChatService:
     @staticmethod
     def _prepare_request(request_context: dict[str, Any]) -> dict[str, Any]:
         message = request_context.get("message", "")
-        messages = [types.Content(role="user", parts=[types.Part.from_text(text=message)])]
+        history = request_context.get("history", [])
+        messages = []
+        for turn in history:
+            role = "model" if turn.get("role") == "assistant" else "user"
+            text = (turn.get("text") or "").strip()
+            if text:
+                messages.append(types.Content(role=role, parts=[types.Part.from_text(text=text)]))
+        messages.append(types.Content(role="user", parts=[types.Part.from_text(text=message)]))
         preset = QUICK_ACTION_TOOL_CALLS.get(request_context.get("filter_id"))
         calls = [AgentToolCall(name=preset[0], arguments=preset[1])] if preset else []
         return {
@@ -175,7 +182,7 @@ class ChatService:
                 }
             count += 1
             used_recent_window = used_recent_window or outcome.used_recent_window
-            messages.append(types.Content(role="tool", parts=[types.Part.from_function_response(
+            messages.append(types.Content(role="user", parts=[types.Part.from_function_response(
                 name=call.name, response=outcome.data,
             )]))
             if outcome.emails or outcome.clear_current_email:

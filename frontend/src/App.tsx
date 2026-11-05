@@ -104,7 +104,10 @@ function App() {
     const clean = text.trim();
     if (!clean || busy) return;
     setError("");
-    setUsedRecentWindow(false);
+    const historyPayload = messages.slice(-10).map((m) => ({
+      role: m.role,
+      text: m.text,
+    }));
     setMessages((current) => [...current, {
       id: crypto.randomUUID(), role: "user", text: clean, time: new Date(),
     }]);
@@ -114,7 +117,7 @@ function App() {
       const response = await fetch("/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: clean, filter_id: filterId }),
+        body: JSON.stringify({ message: clean, filter_id: filterId, history: historyPayload }),
       });
       const data = await response.json().catch(() => ({})) as Partial<ChatResponse>;
       if (!response.ok) throw new Error(data.detail || `The request failed (${response.status}).`);
