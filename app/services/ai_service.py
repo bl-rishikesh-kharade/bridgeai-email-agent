@@ -38,42 +38,56 @@ class AIService:
 
     def _generate_content(self, operation: str, prompt, config=None):
         started = perf_counter()
-        candidate_models = [settings.gemini_model]
-        for fallback in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]:
-            if fallback not in candidate_models:
-                candidate_models.append(fallback)
+        # Cascade from the best available models down to lightweight fallbacks
+        preferred_cascade = [
+            settings.gemini_model,
+            "gemini-3.8-flash",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+        ]
+        candidate_models = []
+        for m in preferred_cascade:
+            if m and m not in candidate_models:
+                candidate_models.append(m)
+
         last_exc = None
         for model_name in candidate_models:
-            for attempt in range(2):
-                log_event("model.request.started", operation=operation, model=model_name, attempt=attempt + 1)
-                try:
-                    response = self.client.models.generate_content(
-                        model=model_name, contents=prompt, config=config,
-                    )
-                    log_event(
-                        "model.request.completed", operation=operation,
-                        model=model_name,
-                        duration_ms=round((perf_counter() - started) * 1000, 2),
-                    )
-                    return response
-                except Exception as exc:
-                    last_exc = exc
-                    status = getattr(exc, "code", None)
-                    is_transient = status in {429, 503} or "RESOURCE_EXHAUSTED" in str(exc) or "UNAVAILABLE" in str(exc)
-                    is_last = (model_name == candidate_models[-1] and (not is_transient or attempt == 1))
-                    log_event(
-                        "model.request.failed",
-                        level=logging.ERROR if is_last else logging.WARNING,
-                        operation=operation,
-                        model=model_name, error_type=type(exc).__name__,
-                        status_code=status, api_status=getattr(exc, "status", None),
-                        duration_ms=round((perf_counter() - started) * 1000, 2),
-                    )
-                    if is_transient:
-                        if attempt < 1:
-                            sleep(1.0)
-                            continue
-                        break
+            is_last = (model_name == candidate_models[-1])
+            log_event("model.request.started", operation=operation, model=model_name)
+            try:
+                response = self.client.models.generate_content(
+                    model=model_name, contents=prompt, config=config,
+                )
+                log_event(
+                    "model.request.completed", operation=operation,
+                    model=model_name,
+                    duration_ms=round((perf_counter() - started) * 1000, 2),
+                )
+                return response
+            except Exception as exc:
+                last_exc = exc
+                status = getattr(exc, "code", None)
+                err_msg = str(exc)
+                is_transient = (
+                    status in {404, 429, 503}
+                    or "RESOURCE_EXHAUSTED" in err_msg
+                    or "UNAVAILABLE" in err_msg
+                    or "NOT_FOUND" in err_msg
+                )
+                log_event(
+                    "model.request.failed",
+                    level=logging.ERROR if is_last else logging.WARNING,
+                    operation=operation,
+                    model=model_name, error_type=type(exc).__name__,
+                    status_code=status, api_status=getattr(exc, "status", None),
+                    duration_ms=round((perf_counter() - started) * 1000, 2),
+                )
+                if is_transient and not is_last:
+                    # Immediately cascade to the next model in preferred order
+                    continue
+                if is_last:
                     raise
         if last_exc:
             raise last_exc

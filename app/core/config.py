@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # Gemini
     gemini_api_key: str | None = None
-    gemini_model: str = Field(default="gemini-3.5-flash-lite", min_length=1, max_length=100)
+    gemini_model: str = Field(default="gemini-3.8-flash", min_length=1, max_length=100)
     gemini_temperature: float = Field(default=0.1, ge=0, le=2)
 
     # OAuth
