@@ -84,6 +84,12 @@ class ChatService:
                 break
             request_context.update(_observe_step("run_tools", self._run_tools)(request_context))
 
+        emails = request_context.get("email_results", [])
+        resp = request_context.get("response", "")
+        if emails and (not resp or resp == "I couldn't complete that request right now. Please try again."):
+            count = len(emails)
+            request_context["response"] = f"Here {'is the' if count == 1 else f'are the {count}'} email{'s' if count != 1 else ''} found in your mailbox:"
+
         request_context.pop("tool_calls", None)
         request_context.pop("messages", None)
         return request_context
@@ -128,9 +134,36 @@ class ChatService:
                 "Gemini chat request failed (error_type=%s, status_code=%s, api_status=%s)",
                 type(exc).__name__, getattr(exc, "code", None), getattr(exc, "status", None),
             )
-            if getattr(exc, "code", None) == 429 or "RESOURCE_EXHAUSTED" in str(exc):
+            # If tool results were already obtained, present them directly to the user
+            emails = request_context.get("email_results", [])
+            reviews = request_context.get("email_reviews", [])
+            if emails:
+                count = len(emails)
+                return {
+                    "response": f"Here {'is the' if count == 1 else f'are the {count}'} email{'s' if count != 1 else ''} found in your mailbox:",
+                    "tool_calls": [],
+                }
+            if reviews:
+                count = len(reviews)
+                return {
+                    "response": f"Here {'is the review' if count == 1 else f'are the reviews for {count} emails'}:",
+                    "tool_calls": [],
+                }
+            if request_context.get("tool_call_count", 0) > 0:
+                return {
+                    "response": "I checked your mailbox, but didn't find any matching emails.",
+                    "tool_calls": [],
+                }
+
+            status = getattr(exc, "code", None)
+            if status == 429 or "RESOURCE_EXHAUSTED" in str(exc):
                 return {
                     "response": "The Gemini API rate limit or daily free-tier request quota has been reached. Please check your Google AI Studio plan or try again shortly.",
+                    "tool_calls": [],
+                }
+            if status == 503 or "UNAVAILABLE" in str(exc):
+                return {
+                    "response": "The AI service is temporarily experiencing high demand. Please try sending your message again in a moment.",
                     "tool_calls": [],
                 }
             return {"response": "I couldn't complete that request right now. Please try again.", "tool_calls": []}

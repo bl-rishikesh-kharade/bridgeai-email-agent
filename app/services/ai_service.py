@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from time import perf_counter
+from time import perf_counter, sleep
 
 from google import genai
 from google.genai import types
@@ -39,36 +39,42 @@ class AIService:
     def _generate_content(self, operation: str, prompt, config=None):
         started = perf_counter()
         candidate_models = [settings.gemini_model]
-        if "gemini-3.5-flash-lite" not in candidate_models:
-            candidate_models.append("gemini-3.5-flash-lite")
+        for fallback in ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]:
+            if fallback not in candidate_models:
+                candidate_models.append(fallback)
         last_exc = None
         for model_name in candidate_models:
-            log_event("model.request.started", operation=operation, model=model_name)
-            try:
-                response = self.client.models.generate_content(
-                    model=model_name, contents=prompt, config=config,
-                )
-                log_event(
-                    "model.request.completed", operation=operation,
-                    model=model_name,
-                    duration_ms=round((perf_counter() - started) * 1000, 2),
-                )
-                return response
-            except Exception as exc:
-                last_exc = exc
-                is_last = (model_name == candidate_models[-1])
-                log_event(
-                    "model.request.failed",
-                    level=logging.ERROR if is_last else logging.WARNING,
-                    operation=operation,
-                    model=model_name, error_type=type(exc).__name__,
-                    status_code=getattr(exc, "code", None), api_status=getattr(exc, "status", None),
-                    duration_ms=round((perf_counter() - started) * 1000, 2),
-                )
-                status = getattr(exc, "code", None)
-                if status in {429, 503} or "RESOURCE_EXHAUSTED" in str(exc) or "UNAVAILABLE" in str(exc):
-                    continue
-                raise
+            for attempt in range(2):
+                log_event("model.request.started", operation=operation, model=model_name, attempt=attempt + 1)
+                try:
+                    response = self.client.models.generate_content(
+                        model=model_name, contents=prompt, config=config,
+                    )
+                    log_event(
+                        "model.request.completed", operation=operation,
+                        model=model_name,
+                        duration_ms=round((perf_counter() - started) * 1000, 2),
+                    )
+                    return response
+                except Exception as exc:
+                    last_exc = exc
+                    status = getattr(exc, "code", None)
+                    is_transient = status in {429, 503} or "RESOURCE_EXHAUSTED" in str(exc) or "UNAVAILABLE" in str(exc)
+                    is_last = (model_name == candidate_models[-1] and (not is_transient or attempt == 1))
+                    log_event(
+                        "model.request.failed",
+                        level=logging.ERROR if is_last else logging.WARNING,
+                        operation=operation,
+                        model=model_name, error_type=type(exc).__name__,
+                        status_code=status, api_status=getattr(exc, "status", None),
+                        duration_ms=round((perf_counter() - started) * 1000, 2),
+                    )
+                    if is_transient:
+                        if attempt < 1:
+                            sleep(1.0)
+                            continue
+                        break
+                    raise
         if last_exc:
             raise last_exc
 
