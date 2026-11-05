@@ -98,3 +98,30 @@ def test_email_tools_gmail_strategy(monkeypatch):
     assert len(outcome.emails) == 1
     assert outcome.emails[0].id == "g-1"
     assert outcome.data["strategy"] == "gmail"
+
+
+def test_email_tools_candidate_pool_eviction_top_50():
+    """Verify that from a 100-email unread pool, critical/high emails are kept and low priority ones are evicted from top 50."""
+    from datetime import timedelta
+    now = datetime.now(timezone.utc)
+
+    # 10 critical emails, 30 high emails, 60 low newsletters
+    pool = []
+    for i in range(10):
+        pool.append(make_email(f"crit-{i}", f"Security alert {i}", sender="no-reply@accounts.google.com", is_read=False))
+    for i in range(30):
+        pool.append(make_email(f"high-{i}", f"Academic Fee Notice {i}", sender="no-reply@chitkara.edu.in", is_read=False))
+    for i in range(60):
+        pool.append(make_email(f"low-{i}", f"Weekly Newsletter {i}", sender="news@example.com", is_read=False))
+
+    provider = FakeEmailProvider(pool)
+    tools = EmailAgentTools(provider, analyzer=lambda s, b: None)
+    outcome = tools.execute("filter_unread_emails", {"filter_id": "important_unread", "limit": 50}, {})
+
+    # Only important emails should be kept, and top 50 returned
+    assert len(outcome.emails) == 40  # 10 critical + 30 high (newsletters filtered out)
+    assert outcome.data["pool_size"] == 100
+    assert outcome.reviews[0]["priority"] == "Critical"
+    assert outcome.reviews[9]["priority"] == "Critical"
+    assert outcome.reviews[10]["priority"] == "High"
+

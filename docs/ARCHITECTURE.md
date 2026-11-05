@@ -35,7 +35,7 @@ User message
   → chat response and email cards return to React
 ```
 
-The **Unread important** button sends its filter ID to the chat route. Python directly asks Gmail for messages carrying both the `UNREAD` and `IMPORTANT` system labels. If more than 100 messages match, it adds Gmail's `newer_than:2d` constraint. Gemini does not decide whether Gmail marked an email important.
+The **Unread important** button sends its filter ID to the chat route. The system fetches an unread candidate pool of up to 100 recent messages from Gmail (without any 48-hour cut-off). The standalone Signal Engine (`config/signals.json` + `app/services/email_signals.py`) evaluates the pool against custom text signals and explicit user name mentions (`Rishikesh`), and sorts them deterministically (Critical > High > Medium > Low). The top 50 highest-priority emails are returned to the user, ensuring low-priority newsletters are excluded.
 
 Other chat messages go to Gemini, which may answer directly or choose a declared tool such as list, search, retrieve, or review email. Python checks tool arguments and enforces a maximum number of tool calls. Gmail access is read-only.
 
