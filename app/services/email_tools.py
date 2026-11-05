@@ -21,7 +21,8 @@ class ListEmailsArgs(_Args):
 class SearchEmailsArgs(_Args):
     query: str = Field(min_length=1, max_length=200)
     sender_only: bool = False
-    limit: int = Field(default=10, ge=1, le=20)
+    unread_only: bool = False
+    limit: int = Field(default=10, ge=1, le=50)
 
 
 class EmailIdArgs(_Args):
@@ -32,6 +33,7 @@ class FilterArgs(_Args):
     filter_id: Literal["important_unread"]
     limit: int = Field(default=500, ge=1, le=500)
     exclude_senders: list[str] = Field(default_factory=list)
+    exclude_keywords: list[str] = Field(default_factory=list)
 
 
 @dataclass
@@ -46,10 +48,10 @@ class ToolOutcome:
 
 TOOL_DECLARATIONS = [
     {"name": "list_recent_emails", "description": "List recent emails from the user's mailbox.", "parameters_json_schema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 50}}, "additionalProperties": False}},
-    {"name": "search_emails", "description": "Find matching emails. Set sender_only true only when looking for who sent an email; otherwise search subject and message content.", "parameters_json_schema": {"type": "object", "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200}, "sender_only": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50}}, "required": ["query"], "additionalProperties": False}},
+    {"name": "search_emails", "description": "Find matching emails by topic, subject, sender, or date constraints. You can search for unread emails (set unread_only: true), date ranges using Gmail query syntax (e.g. after:2026/10/01 before:2026/11/01), or specific senders/topics.", "parameters_json_schema": {"type": "object", "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200}, "sender_only": {"type": "boolean"}, "unread_only": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50}}, "required": ["query"], "additionalProperties": False}},
     {"name": "get_email", "description": "Retrieve one exact email by ID, or the selected/current email when email_id is omitted.", "parameters_json_schema": {"type": "object", "properties": {"email_id": {"type": "string", "maxLength": 256}}, "additionalProperties": False}},
     {"name": "review_email", "description": "Summarize and analyze one exact email, including priority and action items.", "parameters_json_schema": {"type": "object", "properties": {"email_id": {"type": "string", "maxLength": 256}}, "additionalProperties": False}},
-    {"name": "filter_unread_emails", "description": "Find unread important emails from the user's mailbox using priority signals. You can optionally supply exclude_senders to filter out senders or domains the user asked to omit (e.g. ['chitkara.edu.in', 'newsletter']).", "parameters_json_schema": {"type": "object", "properties": {"filter_id": {"type": "string", "enum": ["important_unread"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}, "exclude_senders": {"type": "array", "items": {"type": "string"}}}, "required": ["filter_id"], "additionalProperties": False}},
+    {"name": "filter_unread_emails", "description": "Find unread important emails from the user's mailbox using priority signals. You can supply exclude_senders to omit specific senders/domains (e.g. ['chitkara.edu.in']), and exclude_keywords to omit specific topics or words (e.g. ['circular', 'newsletter', 'fee']).", "parameters_json_schema": {"type": "object", "properties": {"filter_id": {"type": "string", "enum": ["important_unread"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}, "exclude_senders": {"type": "array", "items": {"type": "string"}}, "exclude_keywords": {"type": "array", "items": {"type": "string"}}}, "required": ["filter_id"], "additionalProperties": False}},
 ]
 
 
@@ -117,11 +119,13 @@ class EmailAgentTools:
 
     def _search_emails(self, args: SearchEmailsArgs, _request_context: dict[str, Any]) -> ToolOutcome:
         raw = self.email_provider.search_emails(args.query, limit=args.limit, sender_only=args.sender_only)
+        if args.unread_only:
+            raw = [e for e in raw if not e.is_read]
         ranked = self.signal_engine.filter_and_rank_emails(raw, only_important=False, limit=args.limit)
         emails = [item[0] for item in ranked]
         reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked]
         return ToolOutcome(
-            {"query": args.query, "count": len(emails), "emails": [self._email_brief(email) for email in emails]},
+            {"query": args.query, "unread_only": args.unread_only, "count": len(emails), "emails": [self._email_brief(email) for email in emails]},
             emails=emails,
             reviews=reviews,
             current_email_id=emails[0].id if emails else None,
@@ -163,13 +167,14 @@ class EmailAgentTools:
             except Exception:
                 unread_pool = self.email_provider.list_emails(limit=pool_limit)
 
-            # 2. Priority Engine: Filter by signals and sort strictly by priority
+            # 2. Priority Engine: Filter by signals, respecting sender and keyword exclusions, and sort strictly by priority
             # (Critical > High > Medium > Low, with newest timestamp within each tier)
             ranked = self.signal_engine.filter_and_rank_emails(
                 unread_pool,
                 only_important=True,
                 limit=display_limit,
                 exclude_senders=args.exclude_senders,
+                exclude_keywords=args.exclude_keywords,
             )
             emails = [item[0] for item in ranked]
             reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked]
@@ -180,6 +185,7 @@ class EmailAgentTools:
                     "strategy": "signals",
                     "pool_size": len(unread_pool),
                     "exclude_senders": args.exclude_senders,
+                    "exclude_keywords": args.exclude_keywords,
                     "used_recent_window": False,
                 },
                 emails=emails,
@@ -196,6 +202,7 @@ class EmailAgentTools:
             only_important=False,
             limit=display_limit,
             exclude_senders=args.exclude_senders,
+            exclude_keywords=args.exclude_keywords,
         )
         emails = [item[0] for item in ranked_gmail]
         reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked_gmail]

@@ -183,15 +183,22 @@ class EmailSignalEngine:
         only_important: bool = True,
         limit: int = 10,
         exclude_senders: list[str] | None = None,
+        exclude_keywords: list[str] | None = None,
     ) -> list[tuple[Email, PriorityLevel]]:
         """Filter emails by importance signals and sort them by Priority (Critical first)."""
-        exclude_terms = [t.strip().casefold() for t in (exclude_senders or []) if t.strip()]
+        exclude_sender_terms = [t.strip().casefold() for t in (exclude_senders or []) if t.strip()]
+        exclude_kw_terms = [t.strip().casefold() for t in (exclude_keywords or []) if t.strip()]
 
-        # Filter out excluded senders/domains before evaluating
+        # Filter out excluded senders/domains and excluded topic keywords before evaluating
         filtered_emails = []
         for email in emails:
             sender_str = str(email.sender).casefold()
-            if any(term in sender_str for term in exclude_terms):
+            subject_str = str(email.subject).casefold()
+            body_str = str(email.body).casefold()
+
+            if any(term in sender_str for term in exclude_sender_terms):
+                continue
+            if any(self._matches_keyword(term, sender_str, subject_str, body_str) for term in exclude_kw_terms):
                 continue
             filtered_emails.append(email)
 

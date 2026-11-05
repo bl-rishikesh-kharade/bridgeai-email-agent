@@ -147,3 +147,41 @@ def test_email_tools_signals_respects_exclude_senders():
     assert not any("chitkara" in s for s in senders)
 
 
+def test_email_tools_signals_respects_exclude_keywords():
+    """Verify that when exclude_keywords is provided (e.g. without circulars), matching emails are omitted."""
+    provider = FakeEmailProvider([
+        make_email("sec-1", "Security alert", sender="no-reply@accounts.google.com", is_read=False),
+        make_email("circ-1", "Academic circular - New grading policy", sender="admin@example.com", is_read=False),
+        make_email("fee-1", "Hostel Fee Due Tomorrow", sender="accounts@example.com", is_read=False),
+    ])
+    tools = EmailAgentTools(provider, analyzer=lambda s, b: None)
+    outcome = tools.execute("filter_unread_emails", {
+        "filter_id": "important_unread",
+        "exclude_keywords": ["circular"],
+    }, {})
+
+    subjects = [e.subject for e in outcome.emails]
+    assert len(outcome.emails) == 2
+    assert "Security alert" in subjects
+    assert "Hostel Fee Due Tomorrow" in subjects
+    assert not any("circular" in s.lower() for s in subjects)
+
+
+def test_email_tools_search_unread_only():
+    """Verify that search_emails with unread_only=True returns only unread messages."""
+    provider = FakeEmailProvider([
+        make_email("stipend-1", "Stipend released for October", sender="hr@example.com", is_read=False),
+        make_email("stipend-2", "Stipend query resolved", sender="hr@example.com", is_read=True),
+    ])
+    tools = EmailAgentTools(provider, analyzer=lambda s, b: None)
+    outcome = tools.execute("search_emails", {
+        "query": "stipend",
+        "unread_only": True,
+    }, {})
+
+    assert len(outcome.emails) == 1
+    assert outcome.emails[0].id == "stipend-1"
+    assert outcome.emails[0].is_read is False
+
+
+
