@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -77,102 +78,96 @@ class EmailSignalEngine:
             },
         }
 
+    @staticmethod
+    def _matches_keyword(kw: str, sender: str, subject: str, body: str) -> bool:
+        kw = kw.strip().casefold()
+        if not kw:
+            return False
+        # If keyword looks like a domain or email address (contains @ or .)
+        if "@" in kw or "." in kw:
+            return kw in sender or kw in subject or kw in body
+        # For general words/phrases, use word boundary regex to avoid partial word matches (e.g. 'exam' in 'example.com', 'fee' in 'coffee')
+        pattern = rf"\b{re.escape(kw)}\b"
+        return bool(
+            re.search(pattern, subject)
+            or re.search(pattern, body)
+            or re.search(pattern, sender)
+        )
+
     def evaluate_email(self, email: Email) -> EmailSignalMatch:
         """Evaluate a single email against the configured text signals and user mentions."""
         config = self.load_config()
         user_name = str(config.get("user_name", "")).strip().casefold()
-        signals = config.get("signals", {})
+        rules = config.get("priority_rules") or {}
 
         subject = email.subject.casefold()
         body = email.body.casefold()
         sender = email.sender.casefold()
-        receiver = email.receiver.casefold()
 
         # Check for explicit user name mention in body or subject (as per technical specification requirement)
-        has_user_mention = bool(user_name and (user_name in body or user_name in subject))
-
-        matched_signals = []
+        has_user_mention = bool(
+            user_name
+            and (
+                re.search(rf"\b{re.escape(user_name)}\b", body)
+                or re.search(rf"\b{re.escape(user_name)}\b", subject)
+            )
+        )
 
         # 1. Critical Check
-        critical_cfg = signals.get("critical", {})
-        if any(kw.casefold() in sender for kw in critical_cfg.get("sender_keywords", [])):
-            matched_signals.append("critical.sender")
-        if any(kw.casefold() in subject for kw in critical_cfg.get("subject_keywords", [])):
-            matched_signals.append("critical.subject")
-        if any(kw.casefold() in body for kw in critical_cfg.get("body_keywords", [])):
-            matched_signals.append("critical.body")
-
-        if matched_signals:
+        critical_kws = rules.get("critical", ["security alert", "unrecognized device", "critical"])
+        if any(self._matches_keyword(kw, sender, subject, body) for kw in critical_kws):
             return EmailSignalMatch(
                 email=email,
                 priority="Critical",
-                matched_signals=matched_signals,
+                matched_signals=["critical.rule"],
                 has_user_mention=has_user_mention,
                 is_important=True,
             )
 
-        # 2. High Check
-        high_cfg = signals.get("high", {})
-        if any(kw.casefold() in sender for kw in high_cfg.get("sender_keywords", [])):
-            matched_signals.append("high.sender")
-        if any(kw.casefold() in subject for kw in high_cfg.get("subject_keywords", [])):
-            matched_signals.append("high.subject")
-        if any(kw.casefold() in body for kw in high_cfg.get("body_keywords", [])):
-            matched_signals.append("high.body")
-
-        # Explicit name mention elevates email to High if it contains actionable context
+        # 2. User name mention explicitly elevates to High
         if has_user_mention:
-            matched_signals.append("user.name_mention")
             return EmailSignalMatch(
                 email=email,
                 priority="High",
-                matched_signals=matched_signals,
+                matched_signals=["user.name_mention"],
                 has_user_mention=True,
                 is_important=True,
             )
 
-        if matched_signals:
+        # 3. High Check
+        high_kws = rules.get("high", ["fee", "st-ii", "rubrics", "evaluation", "deadline"])
+        if any(self._matches_keyword(kw, sender, subject, body) for kw in high_kws):
             return EmailSignalMatch(
                 email=email,
                 priority="High",
-                matched_signals=matched_signals,
+                matched_signals=["high.rule"],
                 has_user_mention=has_user_mention,
                 is_important=True,
             )
 
-        # 3. Medium Check
-        medium_cfg = signals.get("medium", {})
-        if any(kw.casefold() in subject for kw in medium_cfg.get("subject_keywords", [])):
-            matched_signals.append("medium.subject")
-        if any(kw.casefold() in body for kw in medium_cfg.get("body_keywords", [])):
-            matched_signals.append("medium.body")
-
         # 4. Low Check
-        low_cfg = signals.get("low", {})
-        if any(kw.casefold() in subject for kw in low_cfg.get("subject_keywords", [])):
-            matched_signals.append("low.subject")
-        if any(kw.casefold() in body for kw in low_cfg.get("body_keywords", [])):
-            matched_signals.append("low.body")
-
-        if "low.subject" in matched_signals or "low.body" in matched_signals:
+        low_kws = rules.get("low", ["newsletter", "digest", "promotional", "unsubscribe"])
+        if any(self._matches_keyword(kw, sender, subject, body) for kw in low_kws):
             return EmailSignalMatch(
                 email=email,
                 priority="Low",
-                matched_signals=matched_signals,
+                matched_signals=["low.rule"],
                 has_user_mention=False,
                 is_important=False,
             )
 
-        if matched_signals:
+        # 5. Medium Check
+        medium_kws = rules.get("medium", ["update", "meeting", "sync"])
+        if any(self._matches_keyword(kw, sender, subject, body) for kw in medium_kws):
             return EmailSignalMatch(
                 email=email,
                 priority="Medium",
-                matched_signals=matched_signals,
+                matched_signals=["medium.rule"],
                 has_user_mention=False,
-                is_important=True,
+                is_important=False,
             )
 
-        # Default fallback priority
+        # Default priority
         return EmailSignalMatch(
             email=email,
             priority="Medium",

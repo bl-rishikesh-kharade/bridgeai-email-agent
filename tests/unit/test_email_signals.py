@@ -71,7 +71,7 @@ def test_chat_service_clean_card_response_strips_numbered_list():
     assert "Here are 5 recent unread important emails from your inbox:" in cleaned
 
 
-def test_email_tools_hybrid_strategy_uses_signals_first():
+def test_email_tools_signals_strategy_filters_and_ranks():
     provider = FakeEmailProvider([
         make_email("crit-1", "Security alert", sender="no-reply@accounts.google.com", is_read=False),
         make_email("low-1", "Weekly Newsletter", sender="news@example.com", is_read=False),
@@ -83,3 +83,18 @@ def test_email_tools_hybrid_strategy_uses_signals_first():
     assert outcome.emails[0].id == "crit-1"
     assert outcome.data["strategy"] == "signals"
     assert outcome.reviews[0]["priority"] == "Critical"
+
+
+def test_email_tools_gmail_strategy(monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "importance_strategy", "gmail")
+    provider = FakeEmailProvider([
+        make_email("g-1", "Gmail Important Email", sender="boss@example.com", is_read=False, labels=["IMPORTANT"]),
+        make_email("g-2", "Ordinary Unread", sender="news@example.com", is_read=False, labels=[]),
+    ])
+    tools = EmailAgentTools(provider, analyzer=lambda s, b: None)
+    outcome = tools.execute("filter_unread_emails", {"filter_id": "important_unread"}, {})
+
+    assert len(outcome.emails) == 1
+    assert outcome.emails[0].id == "g-1"
+    assert outcome.data["strategy"] == "gmail"

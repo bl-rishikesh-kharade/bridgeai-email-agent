@@ -149,13 +149,11 @@ class EmailAgentTools:
         return ToolOutcome({"review": review}, emails=[email], reviews=[review], current_email_id=email.id)
 
     def _filter_unread(self, args: FilterArgs, _request_context: dict[str, Any]) -> ToolOutcome:
-        strategy = getattr(settings, "importance_strategy", "hybrid")
+        strategy = getattr(settings, "importance_strategy", "signals")
         count_unread = getattr(self.email_provider, "has_more_filtered_emails", None)
 
-        use_recent_window = False
-        if strategy in {"signals", "hybrid"}:
-            if count_unread:
-                use_recent_window = bool(count_unread("unread", threshold=100))
+        if strategy == "signals":
+            use_recent_window = bool(count_unread("unread", threshold=100)) if count_unread else False
             query_filter = "unread_last_48_hours" if use_recent_window else "unread"
             fetch_limit = min(max(args.limit * 5, 50), 100)
             try:
@@ -164,50 +162,24 @@ class EmailAgentTools:
                 unread_emails = self.email_provider.list_emails(limit=fetch_limit)
 
             ranked = self.signal_engine.filter_and_rank_emails(unread_emails, only_important=True, limit=args.limit)
+            emails = [item[0] for item in ranked]
+            reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked]
+            return ToolOutcome(
+                {
+                    "filter": args.filter_id,
+                    "count": len(emails),
+                    "strategy": "signals",
+                    "used_recent_window": use_recent_window,
+                },
+                emails=emails,
+                reviews=reviews,
+                current_email_id=emails[0].id if emails else None,
+                clear_current_email=not emails,
+                used_recent_window=use_recent_window,
+            )
 
-            if ranked:
-                emails = [item[0] for item in ranked]
-                reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked]
-                return ToolOutcome(
-                    {
-                        "filter": args.filter_id,
-                        "count": len(emails),
-                        "strategy": "signals",
-                        "used_recent_window": use_recent_window,
-                    },
-                    emails=emails,
-                    reviews=reviews,
-                    current_email_id=emails[0].id if emails else None,
-                    clear_current_email=not emails,
-                    used_recent_window=use_recent_window,
-                )
-
-            # Hybrid fallback: if custom signals found 0 emails, fall back to Gmail's native important_unread
-            if strategy == "hybrid":
-                if count_unread:
-                    use_recent_window = bool(count_unread("important_unread", threshold=100))
-                gmail_filter = "important_unread_last_48_hours" if use_recent_window else "important_unread"
-                gmail_emails = self.email_provider.list_filtered_emails(gmail_filter, limit=args.limit)
-                ranked_gmail = self.signal_engine.filter_and_rank_emails(gmail_emails, only_important=False, limit=args.limit)
-                emails = [item[0] for item in ranked_gmail]
-                reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked_gmail]
-                return ToolOutcome(
-                    {
-                        "filter": args.filter_id,
-                        "count": len(emails),
-                        "strategy": "gmail_fallback",
-                        "used_recent_window": use_recent_window,
-                    },
-                    emails=emails,
-                    reviews=reviews,
-                    current_email_id=emails[0].id if emails else None,
-                    clear_current_email=not emails,
-                    used_recent_window=use_recent_window,
-                )
-
-        # Strategy == "gmail"
-        if count_unread:
-            use_recent_window = bool(count_unread("important_unread", threshold=100))
+        # Strategy == "gmail" (Gmail native label:IMPORTANT)
+        use_recent_window = bool(count_unread("important_unread", threshold=100)) if count_unread else False
         gmail_filter = "important_unread_last_48_hours" if use_recent_window else "important_unread"
         gmail_emails = self.email_provider.list_filtered_emails(gmail_filter, limit=args.limit)
         ranked_gmail = self.signal_engine.filter_and_rank_emails(gmail_emails, only_important=False, limit=args.limit)

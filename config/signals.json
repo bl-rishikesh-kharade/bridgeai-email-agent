@@ -1,100 +1,47 @@
 {
   "user_name": "Rishikesh",
-  "user_emails": [
-    "rishikesh.kharade@bridgelabz.com"
-  ],
-  "importance_strategy": "hybrid",
-  "signals": {
-    "critical": {
-      "sender_keywords": [
-        "accounts.google.com",
-        "security",
-        "alert",
-        "admin",
-        "no-reply@accounts.google.com"
-      ],
-      "subject_keywords": [
-        "security alert",
-        "critical",
-        "urgent",
-        "immediate action",
-        "unauthorized",
-        "compromised",
-        "emergency"
-      ],
-      "body_keywords": [
-        "security alert",
-        "unrecognized device",
-        "password reset",
-        "suspicious activity",
-        "immediate attention"
-      ]
-    },
-    "high": {
-      "require_user_mention": false,
-      "sender_keywords": [
-        "chitkara.edu.in",
-        "bridgelabz.com"
-      ],
-      "subject_keywords": [
-        "fee",
-        "fee notification",
-        "hostel fee",
-        "st-ii",
-        "rubrics",
-        "evaluation",
-        "deadline",
-        "due date",
-        "circular",
-        "exam",
-        "assignment",
-        "interview",
-        "offer",
-        "invoice",
-        "payment"
-      ],
-      "body_keywords": [
-        "last date",
-        "due date",
-        "pay before",
-        "mandatory",
-        "action required",
-        "submission deadline",
-        "evaluation schedule"
-      ]
-    },
-    "medium": {
-      "subject_keywords": [
-        "update",
-        "circular",
-        "announcement",
-        "schedule",
-        "meeting",
-        "sync",
-        "invitation"
-      ],
-      "body_keywords": [
-        "please note",
-        "for your information",
-        "fyi",
-        "reminder"
-      ]
-    },
-    "low": {
-      "subject_keywords": [
-        "newsletter",
-        "digest",
-        "weekly",
-        "monthly",
-        "promotion",
-        "webinar"
-      ],
-      "body_keywords": [
-        "unsubscribe",
-        "view in browser",
-        "marketing",
-        "automated message"
-      ]
-    }
+  "importance_strategy": "signals",
+  "signals_instruction": "Important emails include: 1) Emails addressed to Rishikesh or mentioning Rishikesh in the body. 2) Security alerts from Google or admin notices. 3) Academic circulars, fee notifications, hostel dues, exam schedules (ST-II), and project evaluation rubrics from Chitkara University or BridgeLabz. 4) Deadlines, payments, invoices, or action-required items. Mark newsletters and promotional emails as low priority.",
+  "priority_rules": {
+    "critical": [
+      "security alert",
+      "unrecognized device",
+      "password reset",
+      "unauthorized access",
+      "critical",
+      "urgent"
+    ],
+    "high": [
+      "fee",
+      "st-ii",
+      "rubrics",
+      "evaluation",
+      "deadline",
+      "due date",
+      "circular",
+      "exam",
+      "assignment",
+      "interview",
+      "invoice",
+      "payment",
+      "rishikesh",
+      "chitkara.edu.in",
+      "bridgelabz.com"
+    ],
+    "medium": [
+      "update",
+      "meeting",
+      "sync",
+      "announcement",
+      "schedule",
+      "reminder"
+    ],
+    "low": [
+      "newsletter",
+      "digest",
+      "promotional",
+      "marketing",
+      "unsubscribe"
+    ]
   }
 }

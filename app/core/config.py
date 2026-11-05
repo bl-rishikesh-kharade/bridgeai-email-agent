@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     gemini_timeout: float = Field(default=60.0, gt=0, le=300)
     max_email_body_chars: int = Field(default=30000, ge=1000, le=100000)
     # Strategy & Signals
-    importance_strategy: str = Field(default="hybrid", pattern="^(signals|gmail|hybrid)$")
+    importance_strategy: str = Field(default="signals", pattern="^(signals|gmail)$")
     signals_config_path: str = "config/signals.json"
 
     # Limits

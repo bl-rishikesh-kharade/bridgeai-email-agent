@@ -22,9 +22,11 @@ React chat → FastAPI route → ChatService → Gemini chooses a declared email
 
 The **Unread important** button calls the Gmail label filter directly. Other chat requests go to Gemini, which can answer or ask the backend to run a validated read-only email tool. There is no LangGraph or LangChain in this version. The backend uses a temporary request context to pass data between Python functions; it is discarded after each request and is not conversation memory.
 
-## Setup
+## Setup & Documentation
 
-See [SETUP.md](SETUP.md) for Windows and macOS instructions. In brief, install Python requirements, configure a Gemini API key, enable Gmail API in a Google Cloud project, create a Desktop app OAuth client, then run `python run.py`. The app binds to `127.0.0.1` and should not be exposed as a public shared service.
+- [Setup Guide](docs/SETUP.md) for local installation, Google Cloud credentials, and configuration.
+- [Architecture & Design](docs/ARCHITECTURE.md) for full-stack architecture, request flows, and signal engine.
+- [Security & Codebase Audit Report](docs/AUDIT_REPORT.md) for verified audit findings and fixes.
 
 The frontend source is in `frontend/` and the built interface ships in `app/static/react-ui/`. Node.js is needed only to edit and rebuild the interface.
 
