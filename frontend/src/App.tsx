@@ -248,11 +248,9 @@ function App() {
                                   <strong>{email.subject || "(No subject)"}</strong>
                                 </div>
                                 <span>
-                                  From: {email.sender}
-                                  {email.receiver ? ` · To: ${email.receiver}` : ""}
+                                  {email.sender}
                                   {email.received_at ? ` · ${new Date(email.received_at).toLocaleString()}` : ""}
                                 </span>
-                                {email.body_snippet && <p className="email-option-summary">{email.body_snippet}</p>}
                               </div>
                               {email.gmail_url && <a className="email-view-link" href={email.gmail_url} target="_blank" rel="noopener noreferrer">View in Gmail</a>}
                             </article>
