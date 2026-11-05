@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
-import { ArrowUp, LoaderCircle, Mail, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowUp, LoaderCircle, LogOut, Mail, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 
 type AuthStatus = { connected: boolean; email?: string | null; detail?: string };
 type ChatEmailOption = {
@@ -30,6 +30,7 @@ function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [connecting, setConnecting] = useState(false);
+  const [switchingAccount, setSwitchingAccount] = useState(false);
   const [authError, setAuthError] = useState("");
   // Browser-only display state. Each request sends only the new message; chat history is not saved.
   const [messages, setMessages] = useState<Message[]>([]);
@@ -37,7 +38,6 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [usedRecentWindow, setUsedRecentWindow] = useState(false);
-  const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -45,7 +45,9 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+    if (messages.length > 0 || busy) {
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
+    }
   }, [messages, busy]);
 
   async function checkAuth() {
@@ -76,6 +78,25 @@ function App() {
       setAuthError(caught instanceof Error ? caught.message : "Google authorization could not be completed.");
     } finally {
       setConnecting(false);
+    }
+  }
+
+  async function switchGoogleAccount() {
+    setSwitchingAccount(true);
+    setError("");
+    try {
+      const response = await fetch("/auth/disconnect", { method: "POST" });
+      const data = await response.json().catch(() => ({})) as AuthStatus;
+      if (!response.ok) throw new Error(data.detail || "The Google account could not be disconnected.");
+      setMessages([]);
+      setDraft("");
+      setUsedRecentWindow(false);
+      setAuthError("");
+      setAuth(data);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The Google account could not be disconnected.");
+    } finally {
+      setSwitchingAccount(false);
     }
   }
 
@@ -167,6 +188,10 @@ function App() {
         </a>
         <div className="topbar-right">
           {auth.email && <span className="connected-account">{auth.email}</span>}
+          <button className="switch-account-button" type="button" onClick={() => void switchGoogleAccount()} disabled={busy || switchingAccount}>
+            {switchingAccount ? <LoaderCircle size={14} className="spin" /> : <LogOut size={14} />}
+            {switchingAccount ? "Switching…" : "Switch account"}
+          </button>
         </div>
       </header>
 
@@ -184,13 +209,12 @@ function App() {
           <div className="chat-card-head">
             <div className="agent-avatar"><Sparkles size={18} /></div>
             <div className="chat-title"><h2>Email Agent</h2><span>Connected to Gmail</span></div>
-            {auth.email && <span className="chat-account">{auth.email}</span>}
             <button className="filter-chip important-chip" type="button" disabled={busy} onClick={() => void submitMessage(IMPORTANT_PROMPT, "important_unread")}>
               <Mail size={15} /><span>Unread important</span>
             </button>
           </div>
 
-          <div className="chat-body" ref={listRef}>
+          <div className="chat-body">
             {messages.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-icon"><Sparkles size={24} /></div>
