@@ -31,6 +31,7 @@ class EmailIdArgs(_Args):
 class FilterArgs(_Args):
     filter_id: Literal["important_unread"]
     limit: int = Field(default=500, ge=1, le=500)
+    exclude_senders: list[str] = Field(default_factory=list)
 
 
 @dataclass
@@ -44,11 +45,11 @@ class ToolOutcome:
 
 
 TOOL_DECLARATIONS = [
-    {"name": "list_recent_emails", "description": "List recent emails from the user's mailbox.", "parameters_json_schema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 20}}, "additionalProperties": False}},
-    {"name": "search_emails", "description": "Find matching emails. Set sender_only true only when looking for who sent an email; otherwise search subject and message content.", "parameters_json_schema": {"type": "object", "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200}, "sender_only": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 20}}, "required": ["query"], "additionalProperties": False}},
+    {"name": "list_recent_emails", "description": "List recent emails from the user's mailbox.", "parameters_json_schema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 50}}, "additionalProperties": False}},
+    {"name": "search_emails", "description": "Find matching emails. Set sender_only true only when looking for who sent an email; otherwise search subject and message content.", "parameters_json_schema": {"type": "object", "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200}, "sender_only": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50}}, "required": ["query"], "additionalProperties": False}},
     {"name": "get_email", "description": "Retrieve one exact email by ID, or the selected/current email when email_id is omitted.", "parameters_json_schema": {"type": "object", "properties": {"email_id": {"type": "string", "maxLength": 256}}, "additionalProperties": False}},
     {"name": "review_email", "description": "Summarize and analyze one exact email, including priority and action items.", "parameters_json_schema": {"type": "object", "properties": {"email_id": {"type": "string", "maxLength": 256}}, "additionalProperties": False}},
-    {"name": "filter_unread_emails", "description": "Find emails Gmail marks as both unread and important. Use Gmail's UNREAD and IMPORTANT labels; do not infer importance from message text. If more than 100 emails match, limit results to important unread emails from the last 48 hours.", "parameters_json_schema": {"type": "object", "properties": {"filter_id": {"type": "string", "enum": ["important_unread"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}}, "required": ["filter_id"], "additionalProperties": False}},
+    {"name": "filter_unread_emails", "description": "Find unread important emails from the user's mailbox using priority signals. You can optionally supply exclude_senders to filter out senders or domains the user asked to omit (e.g. ['chitkara.edu.in', 'newsletter']).", "parameters_json_schema": {"type": "object", "properties": {"filter_id": {"type": "string", "enum": ["important_unread"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}, "exclude_senders": {"type": "array", "items": {"type": "string"}}}, "required": ["filter_id"], "additionalProperties": False}},
 ]
 
 
@@ -164,7 +165,12 @@ class EmailAgentTools:
 
             # 2. Priority Engine: Filter by signals and sort strictly by priority
             # (Critical > High > Medium > Low, with newest timestamp within each tier)
-            ranked = self.signal_engine.filter_and_rank_emails(unread_pool, only_important=True, limit=display_limit)
+            ranked = self.signal_engine.filter_and_rank_emails(
+                unread_pool,
+                only_important=True,
+                limit=display_limit,
+                exclude_senders=args.exclude_senders,
+            )
             emails = [item[0] for item in ranked]
             reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked]
             return ToolOutcome(
@@ -173,6 +179,7 @@ class EmailAgentTools:
                     "count": len(emails),
                     "strategy": "signals",
                     "pool_size": len(unread_pool),
+                    "exclude_senders": args.exclude_senders,
                     "used_recent_window": False,
                 },
                 emails=emails,
@@ -184,7 +191,12 @@ class EmailAgentTools:
 
         # Strategy == "gmail" (Gmail native label:IMPORTANT)
         gmail_emails = self.email_provider.list_filtered_emails("important_unread", limit=display_limit)
-        ranked_gmail = self.signal_engine.filter_and_rank_emails(gmail_emails, only_important=False, limit=display_limit)
+        ranked_gmail = self.signal_engine.filter_and_rank_emails(
+            gmail_emails,
+            only_important=False,
+            limit=display_limit,
+            exclude_senders=args.exclude_senders,
+        )
         emails = [item[0] for item in ranked_gmail]
         reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked_gmail]
         return ToolOutcome(

@@ -182,9 +182,20 @@ class EmailSignalEngine:
         *,
         only_important: bool = True,
         limit: int = 10,
+        exclude_senders: list[str] | None = None,
     ) -> list[tuple[Email, PriorityLevel]]:
         """Filter emails by importance signals and sort them by Priority (Critical first)."""
-        evaluated = [self.evaluate_email(email) for email in emails]
+        exclude_terms = [t.strip().casefold() for t in (exclude_senders or []) if t.strip()]
+
+        # Filter out excluded senders/domains before evaluating
+        filtered_emails = []
+        for email in emails:
+            sender_str = str(email.sender).casefold()
+            if any(term in sender_str for term in exclude_terms):
+                continue
+            filtered_emails.append(email)
+
+        evaluated = [self.evaluate_email(email) for email in filtered_emails]
 
         if only_important:
             candidates = [m for m in evaluated if m.is_important]
@@ -203,7 +214,7 @@ class EmailSignalEngine:
 
         log_event(
             "signals.emails_ranked",
-            total_evaluated=len(emails),
+            total_evaluated=len(filtered_emails),
             matched_count=len(sorted_matches),
             critical_count=sum(1 for m in sorted_matches if m.priority == "Critical"),
             high_count=sum(1 for m in sorted_matches if m.priority == "High"),

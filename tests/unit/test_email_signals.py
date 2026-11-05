@@ -125,3 +125,25 @@ def test_email_tools_candidate_pool_eviction_top_50():
     assert outcome.reviews[9]["priority"] == "Critical"
     assert outcome.reviews[10]["priority"] == "High"
 
+
+def test_email_tools_signals_respects_exclude_senders():
+    """Verify that when exclude_senders is provided, emails from matching senders or domains are excluded."""
+    provider = FakeEmailProvider([
+        make_email("sec-1", "Security alert", sender="no-reply@accounts.google.com", is_read=False),
+        make_email("chitkara-1", "Hostel Fee Notice", sender="no-reply@chitkara.edu.in", is_read=False),
+        make_email("chitkara-2", "Exam Schedule", sender="admin@chitkara.edu.in", is_read=False),
+        make_email("bridge-1", "POSH Session", sender="hr@bridgelabz.com", is_read=False),
+    ])
+    tools = EmailAgentTools(provider, analyzer=lambda s, b: None)
+    outcome = tools.execute("filter_unread_emails", {
+        "filter_id": "important_unread",
+        "exclude_senders": ["chitkara"],
+    }, {})
+
+    senders = [str(e.sender) for e in outcome.emails]
+    assert len(outcome.emails) == 2
+    assert "no-reply@accounts.google.com" in senders
+    assert "hr@bridgelabz.com" in senders
+    assert not any("chitkara" in s for s in senders)
+
+
