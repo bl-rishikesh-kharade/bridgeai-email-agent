@@ -38,25 +38,39 @@ class AIService:
 
     def _generate_content(self, operation: str, prompt, config=None):
         started = perf_counter()
-        log_event("model.request.started", operation=operation, model=settings.gemini_model)
-        try:
-            response = self.client.models.generate_content(
-                model=settings.gemini_model, contents=prompt, config=config,
-            )
-        except Exception as exc:
-            log_event(
-                "model.request.failed", level=logging.ERROR, operation=operation,
-                model=settings.gemini_model, error_type=type(exc).__name__,
-                status_code=getattr(exc, "code", None), api_status=getattr(exc, "status", None),
-                duration_ms=round((perf_counter() - started) * 1000, 2),
-            )
-            raise
-        log_event(
-            "model.request.completed", operation=operation,
-            model=settings.gemini_model,
-            duration_ms=round((perf_counter() - started) * 1000, 2),
-        )
-        return response
+        candidate_models = [settings.gemini_model]
+        if "gemini-3.5-flash-lite" not in candidate_models:
+            candidate_models.append("gemini-3.5-flash-lite")
+        last_exc = None
+        for model_name in candidate_models:
+            log_event("model.request.started", operation=operation, model=model_name)
+            try:
+                response = self.client.models.generate_content(
+                    model=model_name, contents=prompt, config=config,
+                )
+                log_event(
+                    "model.request.completed", operation=operation,
+                    model=model_name,
+                    duration_ms=round((perf_counter() - started) * 1000, 2),
+                )
+                return response
+            except Exception as exc:
+                last_exc = exc
+                is_last = (model_name == candidate_models[-1])
+                log_event(
+                    "model.request.failed",
+                    level=logging.ERROR if is_last else logging.WARNING,
+                    operation=operation,
+                    model=model_name, error_type=type(exc).__name__,
+                    status_code=getattr(exc, "code", None), api_status=getattr(exc, "status", None),
+                    duration_ms=round((perf_counter() - started) * 1000, 2),
+                )
+                status = getattr(exc, "code", None)
+                if status in {429, 503} or "RESOURCE_EXHAUSTED" in str(exc) or "UNAVAILABLE" in str(exc):
+                    continue
+                raise
+        if last_exc:
+            raise last_exc
 
     def analyze_email(self, subject: str, body: str) -> AIAnalysis:
         body = body[:settings.max_email_body_chars]

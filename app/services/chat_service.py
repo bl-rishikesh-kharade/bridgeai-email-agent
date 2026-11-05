@@ -128,6 +128,11 @@ class ChatService:
                 "Gemini chat request failed (error_type=%s, status_code=%s, api_status=%s)",
                 type(exc).__name__, getattr(exc, "code", None), getattr(exc, "status", None),
             )
+            if getattr(exc, "code", None) == 429 or "RESOURCE_EXHAUSTED" in str(exc):
+                return {
+                    "response": "The Gemini API rate limit or daily free-tier request quota has been reached. Please check your Google AI Studio plan or try again shortly.",
+                    "tool_calls": [],
+                }
             return {"response": "I couldn't complete that request right now. Please try again.", "tool_calls": []}
 
         messages = list(request_context.get("messages", []))
