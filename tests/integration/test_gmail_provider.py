@@ -161,3 +161,69 @@ def test_provider_errors_are_sanitized():
     with pytest.raises(GmailProviderError, match="retrieval failed") as error:
         provider.get_email("abc")
     assert "private provider detail" not in str(error.value)
+
+
+def test_map_message_handles_missing_headers_gracefully():
+    raw = {
+        "id": "no-headers",
+        "payload": {"headers": []},
+    }
+    email = GmailEmailProvider.map_message(raw)
+    assert email.id == "no-headers"
+    assert email.sender == "unknown"
+    assert email.receiver == "unknown"
+
+
+def test_map_message_handles_undisclosed_recipients():
+    raw = {
+        "id": "undisclosed",
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "alice@example.com"},
+                {"name": "To", "value": "undisclosed-recipients:;"},
+                {"name": "Subject", "value": "Newsletter"},
+            ],
+        },
+    }
+    email = GmailEmailProvider.map_message(raw)
+    assert email.id == "undisclosed"
+    assert email.sender == "alice@example.com"
+    assert email.receiver in {"undisclosed-recipients:;", "alice@example.com"}
+
+
+def test_map_message_accepts_non_fqdn_sender():
+    raw = {
+        "id": "local-daemon",
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "root@localhost"},
+                {"name": "To", "value": "admin@localhost"},
+                {"name": "Subject", "value": "Cron notice"},
+            ],
+        },
+    }
+    email = GmailEmailProvider.map_message(raw)
+    assert email.id == "local-daemon"
+    assert email.sender == "root@localhost"
+
+
+def test_gmail_url_fallback_when_account_lookup_fails():
+    provider = GmailEmailProvider(Service(Messages()))
+    email = GmailEmailProvider.map_message(message("fallback-123"))
+    url = provider.gmail_url(email)
+    assert url == "https://mail.google.com/mail/#all/fallback-123"
+
+
+def test_list_emails_skips_corrupted_message_and_returns_valid_messages():
+    refs = [{"id": "bad"}, {"id": "good"}]
+    messages = Messages(
+        listing={"messages": refs},
+        gets={
+            "bad": Request(result={"id": "bad", "payload": "not-a-dict"}),
+            "good": Request(result=message("good")),
+        },
+    )
+    provider = GmailEmailProvider(Service(messages))
+    emails = provider.list_emails(2)
+    assert len(emails) == 1
+    assert emails[0].id == "good"

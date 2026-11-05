@@ -42,6 +42,11 @@ class GmailEmailProvider:
         manager = oauth_manager or GoogleOAuthManager(settings)
         return cls(service_factory=lambda: manager.service("gmail", "v1"))
 
+    def reset_connection(self) -> None:
+        """Discard cached Gmail state after the connected Google account changes."""
+        self._service = None
+        self._account_email = None
+
     @staticmethod
     def _decode_data(data: str) -> str:
         try:
@@ -75,11 +80,18 @@ class GmailEmailProvider:
             raise GmailProviderError("Gmail returned a malformed message without an ID or payload.")
         headers = {str(h.get("name", "")).lower(): str(h.get("value", ""))
                    for h in raw["payload"].get("headers", []) if isinstance(h, dict)}
-        sender = getaddresses([headers.get("from", "")])[0][1]
-        recipients = getaddresses([headers.get("to", "")])
-        receiver = recipients[0][1] if recipients else sender
-        if not sender or not receiver:
-            raise GmailProviderError("Gmail message is missing a valid sender or recipient.")
+        from_header = headers.get("from", "").strip()
+        parsed_senders = [addr for _, addr in getaddresses([from_header]) if addr]
+        sender = parsed_senders[0] if parsed_senders else (from_header or "unknown")
+
+        to_header = headers.get("to", "").strip()
+        parsed_recipients = [addr for _, addr in getaddresses([to_header]) if addr]
+        receiver = parsed_recipients[0] if parsed_recipients else (to_header or sender or "unknown")
+
+        if not sender:
+            sender = "unknown"
+        if not receiver:
+            receiver = sender
         labels = raw.get("labelIds", [])
         internal_date = raw.get("internalDate")
         try:
@@ -95,6 +107,7 @@ class GmailEmailProvider:
     def get_email(self, email_id: str) -> Email | None:
         try:
             raw = self._gmail.users().messages().get(userId="me", id=str(email_id), format="full").execute()
+            return self.map_message(raw)
         except GmailProviderError:
             raise
         except Exception as exc:
@@ -103,7 +116,6 @@ class GmailEmailProvider:
             if getattr(exc, "resp", None) is not None and getattr(exc.resp, "status", None) == 403:
                 raise GmailAuthorizationError("Gmail access is denied; check the authorized Workspace account and read-only scope.") from exc
             raise GmailProviderError("Gmail message retrieval failed.") from exc
-        return self.map_message(raw)
 
     def list_emails(
         self, limit: int = 50, *, query: str | None = None,
@@ -130,9 +142,9 @@ class GmailEmailProvider:
             for ref in refs[:limit]:
                 try:
                     email = self.get_email(ref.get("id", ""))
-                except GmailProviderError as exc:
-                    if exc.__cause__ is not None:
-                        raise
+                except GmailAuthorizationError:
+                    raise
+                except GmailProviderError:
                     log_event(
                         "gmail.message.skipped", level=logging.WARNING,
                         reason="malformed_message_metadata",
@@ -141,7 +153,7 @@ class GmailEmailProvider:
                     continue
                 if email is not None:
                     messages.append(email)
-            if skipped and not messages:
+            if skipped and not messages and refs:
                 raise GmailProviderError("Gmail messages could not be parsed.")
             return messages
         except GmailProviderError:
@@ -189,8 +201,11 @@ class GmailEmailProvider:
 
     def gmail_url(self, email: Email) -> str:
         thread_id = email.thread_id or email.id
-        account = urlencode({"authuser": self.get_account_email()})
-        return f"https://mail.google.com/mail/?{account}#all/{quote(thread_id, safe='')}"
+        try:
+            account = urlencode({"authuser": self.get_account_email()})
+            return f"https://mail.google.com/mail/?{account}#all/{quote(thread_id, safe='')}"
+        except Exception:
+            return f"https://mail.google.com/mail/#all/{quote(thread_id, safe='')}"
 
     def search_emails(self, query: str, limit: int = 10, *, sender_only: bool = False) -> list[Email]:
         clean_query = " ".join(str(query).split()).replace('"', "").replace("\\", "")

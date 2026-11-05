@@ -112,6 +112,3 @@ def analyze_email(subject: str, body: str) -> AIAnalysis:
 
 def agent_turn(messages, tool_declarations: list[dict], system_instruction: str, *, tools_enabled: bool = True) -> AgentTurn:
     return get_ai_service().agent_turn(messages, tool_declarations, system_instruction, tools_enabled=tools_enabled)
-
-
-\n

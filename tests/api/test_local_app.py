@@ -33,3 +33,68 @@ def test_agent_chat_rejects_unknown_filter_ids():
             "message": "Do something", "filter_id": "delete_all_emails",
         })
     assert response.status_code == 422
+
+
+def test_auth_status_and_disconnect_routes():
+    from fastapi import FastAPI
+    from app.api.routes.auth import build_router as build_auth_router
+    from tests.fakes import FakeEmailProvider
+
+    class FakeOAuth:
+        def __init__(self, connected=True):
+            self._connected = connected
+
+        def has_saved_authorization(self):
+            return self._connected
+
+        def disconnect(self):
+            self._connected = False
+
+    fake_oauth = FakeOAuth(connected=True)
+    fake_provider = FakeEmailProvider()
+    test_app = FastAPI()
+    test_app.include_router(build_auth_router(fake_oauth, fake_provider))
+
+    with TestClient(test_app) as client:
+        status_res = client.get("/auth/status")
+        assert status_res.status_code == 200
+        assert status_res.json() == {"connected": True, "email": "user@example.com"}
+
+        disconnect_res = client.post("/auth/disconnect")
+        assert disconnect_res.status_code == 200
+        assert disconnect_res.json() == {"connected": False, "email": None}
+
+        status_after = client.get("/auth/status")
+        assert status_after.status_code == 200
+        assert status_after.json() == {"connected": False, "email": None}
+
+
+def test_agent_chat_important_unread_workflow():
+    from fastapi import FastAPI
+    from app.api.routes.agent import build_router as build_agent_router
+    from app.schemas.email import Email
+    from app.services.chat_service import build_chat_service
+    from tests.fakes import FakeEmailProvider
+
+    email = Email(
+        id="imp-1", provider_message_id="imp-1", sender="boss@example.com",
+        receiver="user@example.com", subject="Urgent matter", body="Please review immediately",
+        is_read=False, labels=["IMPORTANT"],
+    )
+    fake_provider = FakeEmailProvider([email])
+    chat_service = build_chat_service(fake_provider)
+    test_app = FastAPI()
+    test_app.include_router(build_agent_router(chat_service, fake_provider))
+
+    with TestClient(test_app) as client:
+        response = client.post("/agent/chat", json={
+            "message": "Show my unread important emails",
+            "filter_id": "important_unread",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert "Found 1 unread important email" in data["response"]
+        assert len(data["email_options"]) == 1
+        assert data["email_options"][0]["id"] == "imp-1"
+        assert data["email_options"][0]["subject"] == "Urgent matter"
+        assert "mail.google.com" in data["email_options"][0]["gmail_url"]

@@ -38,9 +38,10 @@ class GoogleOAuthManager:
             raise GoogleOAuthError("Install Google OAuth dependencies from requirements.txt.") from exc
         try:
             flow = InstalledAppFlow.from_client_secrets_file(str(self.credentials_path), self.scopes)
-            credentials = flow.run_local_server(port=0)
-            self._save_credentials(credentials)
-            self._credentials = credentials
+            credentials = flow.run_local_server(port=0, prompt="select_account")
+            with self._lock:
+                self._save_credentials(credentials)
+                self._credentials = credentials
             return credentials
         except GoogleOAuthError:
             raise
@@ -49,11 +50,21 @@ class GoogleOAuthManager:
 
     def has_saved_authorization(self) -> bool:
         """Return whether reusable Gmail credentials are available locally."""
-        try:
-            self._credentials = self._load_saved_credentials()
-            return self._credentials is not None
-        except GoogleOAuthError:
-            return False
+        with self._lock:
+            try:
+                self._credentials = self._load_saved_credentials()
+                return self._credentials is not None
+            except GoogleOAuthError:
+                return False
+
+    def disconnect(self) -> None:
+        """Clear the locally saved Google authorization so another account can connect."""
+        with self._lock:
+            self._credentials = None
+            try:
+                self.token_path.unlink(missing_ok=True)
+            except OSError as exc:
+                raise GoogleOAuthError("Saved Google authorization could not be cleared.") from exc
 
     def _load_saved_credentials(self):
         if not self.credentials_path.is_file():

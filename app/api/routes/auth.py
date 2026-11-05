@@ -13,8 +13,8 @@ def build_router(oauth_manager, email_provider):
             return {"connected": False, "email": None}
         try:
             return {"connected": True, "email": email_provider.get_account_email()}
-        except GmailProviderError as exc:
-            raise HTTPException(status_code=503, detail="The connected Google account could not be checked. Try again.") from exc
+        except (GoogleOAuthError, GmailProviderError):
+            return {"connected": False, "email": None}
 
     @router.post("/connect")
     def connect():
@@ -22,6 +22,15 @@ def build_router(oauth_manager, email_provider):
             oauth_manager.connect()
             return {"connected": True, "email": email_provider.get_account_email()}
         except (GoogleOAuthError, GmailProviderError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @router.post("/disconnect")
+    def disconnect():
+        try:
+            oauth_manager.disconnect()
+            email_provider.reset_connection()
+            return {"connected": False, "email": None}
+        except GoogleOAuthError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return router

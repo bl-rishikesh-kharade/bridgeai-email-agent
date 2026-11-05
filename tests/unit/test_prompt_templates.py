@@ -16,6 +16,3 @@ def test_analyze_email_prompt_marks_email_content_as_untrusted():
     assert "untrusted input" in prompt
     assert "Subject example" in prompt
     assert "Body example" in prompt
-
-
-\n

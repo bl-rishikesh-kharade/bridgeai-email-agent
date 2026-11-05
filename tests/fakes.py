@@ -27,12 +27,25 @@ class FakeEmailProvider:
         return matches[:limit]
 
     def list_filtered_emails(self, filter_id: str, limit: int = 20) -> list[Email]:
-        if filter_id == "important_unread":
+        if filter_id in {"important_unread", "important_unread_last_48_hours"}:
             matches = [email for email in self._emails.values()
                        if not email.is_read and any(label.casefold() == "important" for label in email.labels)]
         else:
             raise ValueError("Unsupported fake email filter.")
         return matches[:limit]
 
+    def has_more_filtered_emails(self, filter_id: str, threshold: int = 100) -> bool:
+        if filter_id != "important_unread":
+            raise ValueError("Unsupported fake email filter.")
+        matches = [email for email in self._emails.values()
+                   if not email.is_read and any(label.casefold() == "important" for label in email.labels)]
+        return len(matches) > threshold
 
-\n
+    def get_account_email(self) -> str:
+        return "user@example.com"
+
+    def gmail_url(self, email: Email) -> str:
+        return f"https://mail.google.com/mail/#all/{email.id}"
+
+    def reset_connection(self) -> None:
+        pass
