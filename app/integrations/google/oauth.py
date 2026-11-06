@@ -1,7 +1,12 @@
 """Local, single-user Google OAuth with an explicit connect action."""
-from pathlib import Path
+import os
 import json
 import threading
+from pathlib import Path
+
+# Allow scope modifications from Google (e.g. if user previously granted extra scopes)
+os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+
 
 
 class GoogleOAuthError(RuntimeError):
@@ -117,7 +122,7 @@ class GoogleOAuthManager:
         )
         auth_url, _ = flow.authorization_url(
             access_type="offline",
-            include_granted_scopes="true",
+            include_granted_scopes="false",
             prompt="select_account",
             state=state,
         )
