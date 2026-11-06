@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { ArrowUp, LoaderCircle, LogOut, Mail, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import Markdown from "react-markdown";
 
 type AuthStatus = { connected: boolean; email?: string | null; detail?: string; redirect?: string };
 type ChatEmailOption = {
@@ -237,7 +238,15 @@ function App() {
                   <article className={`message-row ${message.role}`} key={message.id}>
                     {message.role === "assistant" && <div className="message-avatar"><Sparkles size={15} /></div>}
                     <div className="message-content">
-                      <div className={`message-bubble ${message.role}`}>{message.text}</div>
+                      <div className={`message-bubble ${message.role}`}>
+                        {message.role === "assistant" ? (
+                          <div className="markdown-content">
+                            <Markdown>{message.text}</Markdown>
+                          </div>
+                        ) : (
+                          message.text
+                        )}
+                      </div>
                       {message.role === "assistant" && message.emailOptions?.length ? (
                         <div className="email-options" aria-label="Matching emails">
                           {message.emailOptions.map((email) => (

@@ -84,9 +84,24 @@ h1 { margin-bottom: 7px; color: #17263b; font: 700 clamp(24px, 3.2vw, 32px)/1.25
 .message-avatar { width: 29px; height: 29px; margin-top: 2px; border-radius: 10px; }
 .message-content { max-width: min(76%, 650px); display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
 .message-row.user .message-content { align-items: flex-end; }
-.message-bubble { padding: 11px 14px; color: #3b4a60; border-radius: 14px; font-size: 13px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.message-bubble { padding: 11px 14px; color: #3b4a60; border-radius: 14px; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
 .message-bubble.assistant { border: 1px solid #edf0f4; border-top-left-radius: 5px; background: #f8f9fb; }
-.message-bubble.user { color: #fff; border-top-right-radius: 5px; background: linear-gradient(145deg, #5a6cf0, #4b5cdd); box-shadow: 0 4px 12px rgba(77,95,232,.16); }
+.message-bubble.user { color: #fff; border-top-right-radius: 5px; background: linear-gradient(145deg, #5a6cf0, #4b5cdd); box-shadow: 0 4px 12px rgba(77,95,232,.16); white-space: pre-wrap; }
+.markdown-content p { margin: 0 0 8px; }
+.markdown-content p:last-child { margin-bottom: 0; }
+.markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4 { margin: 12px 0 6px; color: #17263b; font-family: "Manrope", sans-serif; font-weight: 700; line-height: 1.35; }
+.markdown-content h1:first-child, .markdown-content h2:first-child, .markdown-content h3:first-child { margin-top: 0; }
+.markdown-content h1 { font-size: 15px; }
+.markdown-content h2 { font-size: 14px; }
+.markdown-content h3 { font-size: 13px; text-transform: none; }
+.markdown-content h4 { font-size: 12px; }
+.markdown-content ul, .markdown-content ol { margin: 6px 0 10px; padding-left: 20px; }
+.markdown-content ul:last-child, .markdown-content ol:last-child { margin-bottom: 0; }
+.markdown-content li { margin-bottom: 4px; line-height: 1.55; }
+.markdown-content li:last-child { margin-bottom: 0; }
+.markdown-content strong { color: #182538; font-weight: 650; }
+.markdown-content code { padding: 2px 5px; background: #eef2f7; border: 1px solid #e1e7f0; border-radius: 4px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.markdown-content a { color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
 .email-options { width: 100%; display: grid; gap: 8px; margin-top: 9px; }
 .email-option { width: 100%; min-width: 0; padding: 11px 12px; border: 1px solid #e9edf4; border-radius: 12px; background: #fff; }
 .email-option-open { display: block; width: 100%; padding: 0; color: inherit; border: 0; background: transparent; text-align: left; cursor: pointer; }
