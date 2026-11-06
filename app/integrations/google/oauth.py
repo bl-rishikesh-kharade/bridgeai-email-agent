@@ -110,7 +110,12 @@ class GoogleOAuthManager:
         """Build Google web authorization redirect URL."""
         from google_auth_oauthlib.flow import Flow
         client_config = self.get_client_config()
-        flow = Flow.from_client_config(client_config, scopes=self.scopes, redirect_uri=redirect_uri)
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=self.scopes,
+            redirect_uri=redirect_uri,
+            autogenerate_code_verifier=False,
+        )
         auth_url, _ = flow.authorization_url(
             access_type="offline",
             include_granted_scopes="true",
@@ -123,7 +128,12 @@ class GoogleOAuthManager:
         """Exchange Google authorization code for token dictionary."""
         from google_auth_oauthlib.flow import Flow
         client_config = self.get_client_config()
-        flow = Flow.from_client_config(client_config, scopes=self.scopes, redirect_uri=redirect_uri)
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=self.scopes,
+            redirect_uri=redirect_uri,
+            autogenerate_code_verifier=False,
+        )
         flow.fetch_token(code=code)
         creds = flow.credentials
         return json.loads(creds.to_json())
