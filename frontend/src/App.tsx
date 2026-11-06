@@ -57,7 +57,7 @@ function App() {
     setCheckingAuth(true);
     setAuthError("");
     try {
-      const response = await fetch("/auth/status");
+      const response = await fetch("/auth/status", { cache: "no-store" });
       const data = await response.json().catch(() => ({})) as AuthStatus;
       if (!response.ok) throw new Error(data.detail || "Could not check the Google connection.");
       setAuth(data);

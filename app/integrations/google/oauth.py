@@ -8,6 +8,76 @@ class GoogleOAuthError(RuntimeError):
     """Safe error for missing or invalid local Google authorization."""
 
 
+class _HtmlRedirectWSGIApp:
+    """WSGI application that receives Google's OAuth code and immediately redirects the browser back to the app window."""
+
+    def __init__(self, return_url: str):
+        self.return_url = return_url
+        self.last_request_uri = None
+
+    def __call__(self, environ, start_response):
+        start_response("200 OK", [("Content-type", "text/html; charset=utf-8")])
+        import wsgiref.util
+        self.last_request_uri = wsgiref.util.request_uri(environ)
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Connected - BridgeAI</title>
+  <meta http-equiv="refresh" content="0;url={self.return_url}">
+  <style>
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: #0f172a;
+      color: #f8fafc;
+    }}
+    .card {{
+      background: #1e293b;
+      padding: 2rem 2.5rem;
+      border-radius: 14px;
+      text-align: center;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+      max-width: 400px;
+      border: 1px solid #334155;
+    }}
+    h2 {{ margin: 0 0 0.5rem 0; color: #38bdf8; font-size: 1.35rem; }}
+    p {{ color: #94a3b8; font-size: 0.95rem; margin-bottom: 1.25rem; }}
+    .btn {{
+      display: inline-block;
+      padding: 0.55rem 1.2rem;
+      background: #2563eb;
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 0.9rem;
+    }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Connected to Google!</h2>
+    <p>Taking you directly to the BridgeAI Email Agent window...</p>
+    <a class="btn" href="{self.return_url}">Open BridgeAI</a>
+  </div>
+  <script>
+    try {{
+      if (window.opener) {{
+        window.opener.location.reload();
+      }}
+    }} catch (e) {{}}
+    window.location.replace("{self.return_url}");
+  </script>
+</body>
+</html>"""
+        return [html.encode("utf-8")]
+
+
 class GoogleOAuthManager:
     def __init__(self, settings):
         self.credentials_path = Path(settings.oauth_credentials_path)
@@ -76,8 +146,8 @@ class GoogleOAuthManager:
                 raise GoogleOAuthError("Google is not connected. Choose Connect Google to authorize this account.")
             return self._credentials
 
-    def connect(self):
-        """Run the installed-app OAuth flow after the user presses Connect Google."""
+    def connect(self, return_url: str = "http://localhost:8000/"):
+        """Run the installed-app OAuth flow and redirect browser directly to the app window."""
         if not self.credentials_path.is_file():
             raise GoogleOAuthError(f"OAuth client file not found: {self.credentials_path}")
         try:
@@ -86,7 +156,38 @@ class GoogleOAuthManager:
             raise GoogleOAuthError("Install Google OAuth dependencies from requirements.txt.") from exc
         try:
             flow = InstalledAppFlow.from_client_secrets_file(str(self.credentials_path), self.scopes)
-            credentials = flow.run_local_server(port=0, prompt="select_account")
+            credentials = None
+            try:
+                import wsgiref.simple_server
+                from google_auth_oauthlib.flow import _ExclusiveWSGIServer, _WSGIRequestHandler
+
+                wsgi_app = _HtmlRedirectWSGIApp(return_url)
+                local_server = wsgiref.simple_server.make_server(
+                    "localhost",
+                    0,
+                    wsgi_app,
+                    server_class=_ExclusiveWSGIServer,
+                    handler_class=_WSGIRequestHandler,
+                )
+                try:
+                    flow.redirect_uri = f"http://localhost:{local_server.server_port}/"
+                    auth_url, _ = flow.authorization_url(prompt="select_account")
+                    import webbrowser
+                    webbrowser.open(auth_url, new=1, autoraise=True)
+                    local_server.timeout = 180
+                    local_server.handle_request()
+                    if wsgi_app.last_request_uri:
+                        authorization_response = wsgi_app.last_request_uri.replace("http://", "https://")
+                        flow.fetch_token(authorization_response=authorization_response)
+                        credentials = flow.credentials
+                finally:
+                    local_server.server_close()
+            except Exception:
+                credentials = None
+
+            if credentials is None:
+                credentials = flow.run_local_server(port=0, prompt="select_account")
+
             with self._lock:
                 self._save_credentials(credentials)
                 self._credentials = credentials

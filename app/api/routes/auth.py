@@ -23,7 +23,8 @@ def build_router(oauth_manager, email_provider):
         return email_provider
 
     @router.get("/status")
-    def status(request: Request):
+    def status(request: Request, response: Response):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         # 1. Check browser session cookie (Web / Vercel mode)
         auth_cookie = request.cookies.get("bridgeai_session_token")
         if auth_cookie:
@@ -45,8 +46,8 @@ def build_router(oauth_manager, email_provider):
     def login(request: Request):
         """Initiate Web OAuth redirect (used in cloud/Vercel environments)."""
         redirect_uri = settings.google_redirect_uri or str(request.url_for("auth_callback"))
-        # Ensure https scheme when behind cloud reverse proxies (e.g. Vercel)
-        if "vercel.app" in redirect_uri and redirect_uri.startswith("http://"):
+        is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https" or "vercel.app" in str(request.base_url)
+        if is_https and redirect_uri.startswith("http://"):
             redirect_uri = redirect_uri.replace("http://", "https://", 1)
         try:
             auth_url = oauth_manager.get_authorization_url(redirect_uri)
@@ -56,20 +57,21 @@ def build_router(oauth_manager, email_provider):
 
     @router.get("/callback", name="auth_callback")
     def callback(code: str, request: Request):
-        """Receive Google OAuth callback, store token in session cookie, and redirect to home."""
+        """Receive Google OAuth callback, store token in session cookie, and redirect directly to home."""
         redirect_uri = settings.google_redirect_uri or str(request.url_for("auth_callback"))
-        if "vercel.app" in redirect_uri and redirect_uri.startswith("http://"):
+        is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https" or "vercel.app" in str(request.base_url)
+        if is_https and redirect_uri.startswith("http://"):
             redirect_uri = redirect_uri.replace("http://", "https://", 1)
         try:
             token_dict = oauth_manager.exchange_code_for_token(code, redirect_uri)
-            response = RedirectResponse(url="/")
+            response = RedirectResponse(url="/", status_code=302)
             # Set httpOnly session cookie with the user's token
             response.set_cookie(
                 key="bridgeai_session_token",
                 value=json.dumps(token_dict),
                 httponly=True,
                 samesite="lax",
-                secure=request.url.scheme == "https" or "vercel.app" in str(request.base_url),
+                secure=is_https,
                 max_age=60 * 60 * 24 * 7,  # 7 days
             )
             return response
@@ -83,7 +85,8 @@ def build_router(oauth_manager, email_provider):
             # Signal frontend to redirect to /auth/login
             return {"connected": False, "redirect": "/auth/login"}
         try:
-            oauth_manager.connect()
+            return_url = str(request.base_url)
+            oauth_manager.connect(return_url=return_url)
             return {"connected": True, "email": email_provider.get_account_email()}
         except (GoogleOAuthError, GmailProviderError) as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
