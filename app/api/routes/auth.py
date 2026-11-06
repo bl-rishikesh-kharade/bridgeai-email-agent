@@ -1,3 +1,4 @@
+import base64
 import json
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
@@ -7,6 +8,21 @@ from app.integrations.google.oauth import GoogleOAuthError
 from app.integrations.email.gmail_provider import GmailEmailProvider, GmailProviderError
 
 
+def _encode_session_token(token_data: dict) -> str:
+    raw = json.dumps(token_data).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii")
+
+
+def _decode_session_token(cookie_str: str) -> dict | None:
+    try:
+        if cookie_str.startswith("{"):
+            return json.loads(cookie_str)
+        raw = base64.urlsafe_b64decode(cookie_str.encode("ascii"))
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return None
+
+
 def build_router(oauth_manager, email_provider):
     router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -14,12 +30,13 @@ def build_router(oauth_manager, email_provider):
         """Build provider from session cookie if present, else fallback to default provider."""
         auth_cookie = request.cookies.get("bridgeai_session_token")
         if auth_cookie:
-            try:
-                token_data = json.loads(auth_cookie)
-                creds = oauth_manager.credentials_from_token(token_data)
-                return GmailEmailProvider(service_factory=lambda: oauth_manager.service("gmail", "v1", creds=creds))
-            except Exception:
-                pass
+            token_data = _decode_session_token(auth_cookie)
+            if token_data:
+                try:
+                    creds = oauth_manager.credentials_from_token(token_data)
+                    return GmailEmailProvider(service_factory=lambda: oauth_manager.service("gmail", "v1", creds=creds))
+                except Exception:
+                    pass
         return email_provider
 
     @router.get("/status")
@@ -28,11 +45,17 @@ def build_router(oauth_manager, email_provider):
         # 1. Check browser session cookie (Web / Vercel mode)
         auth_cookie = request.cookies.get("bridgeai_session_token")
         if auth_cookie:
-            try:
-                session_provider = _resolve_session_provider(request)
-                return {"connected": True, "email": session_provider.get_account_email()}
-            except Exception:
-                pass
+            token_data = _decode_session_token(auth_cookie)
+            if token_data:
+                # Return cached email if available
+                cached_email = token_data.get("email")
+                if cached_email:
+                    return {"connected": True, "email": cached_email}
+                try:
+                    session_provider = _resolve_session_provider(request)
+                    return {"connected": True, "email": session_provider.get_account_email()}
+                except Exception:
+                    return {"connected": True, "email": "Google User"}
 
         # 2. Check local saved authorization (Local Desktop mode)
         if not oauth_manager.has_saved_authorization():
@@ -75,12 +98,20 @@ def build_router(oauth_manager, email_provider):
         code_verifier = request.cookies.get("bridgeai_code_verifier")
         try:
             token_dict = oauth_manager.exchange_code_for_token(code, redirect_uri, code_verifier=code_verifier)
+            # Pre-fetch and cache user email in the token data
+            try:
+                creds = oauth_manager.credentials_from_token(token_dict)
+                temp_provider = GmailEmailProvider(service_factory=lambda: oauth_manager.service("gmail", "v1", creds=creds))
+                token_dict["email"] = temp_provider.get_account_email()
+            except Exception:
+                pass
+
             response = RedirectResponse(url="/", status_code=302)
             response.delete_cookie("bridgeai_code_verifier")
-            # Set httpOnly session cookie with the user's token
+            # Set httpOnly session cookie with urlsafe base64 token
             response.set_cookie(
                 key="bridgeai_session_token",
-                value=json.dumps(token_dict),
+                value=_encode_session_token(token_dict),
                 httponly=True,
                 samesite="lax",
                 secure=is_https,

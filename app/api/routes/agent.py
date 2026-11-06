@@ -13,7 +13,11 @@ def build_router(chat_service, email_provider, oauth_manager=None):
             auth_cookie = http_request.cookies.get("bridgeai_session_token")
             if auth_cookie:
                 try:
-                    token_data = json.loads(auth_cookie)
+                    import base64
+                    if auth_cookie.startswith("{"):
+                        token_data = json.loads(auth_cookie)
+                    else:
+                        token_data = json.loads(base64.urlsafe_b64decode(auth_cookie.encode("ascii")).decode("utf-8"))
                     creds = oauth_manager.credentials_from_token(token_data)
                     return GmailEmailProvider(service_factory=lambda: oauth_manager.service("gmail", "v1", creds=creds))
                 except Exception:
