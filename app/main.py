@@ -41,7 +41,8 @@ def create_app():
     app.include_router(build_agent_router(chat_service, email_provider, oauth_manager=oauth))
 
     static_dir = Path(__file__).parent / "static"
-    react_ui_dir = static_dir / "react-ui"
+    frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+    react_ui_dir = frontend_dist if (frontend_dist / "index.html").is_file() else (static_dir / "react-ui")
     if (react_ui_dir / "index.html").is_file():
         app.mount("/assets", StaticFiles(directory=react_ui_dir / "assets"), name="frontend-assets")
 

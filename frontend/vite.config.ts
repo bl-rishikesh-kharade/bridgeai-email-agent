@@ -17,7 +17,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: resolve(frontendDir, "../app/static/react-ui"),
+    outDir: "dist",
     emptyOutDir: true,
   },
 });
