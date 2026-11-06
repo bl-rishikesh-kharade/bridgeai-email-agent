@@ -17,6 +17,9 @@ def build_router(chat_service, email_provider, oauth_manager=None):
                     if auth_cookie.startswith("{"):
                         token_data = json.loads(auth_cookie)
                     else:
+                        pad = 4 - (len(auth_cookie) % 4)
+                        if pad != 4:
+                            auth_cookie += "=" * pad
                         token_data = json.loads(base64.urlsafe_b64decode(auth_cookie.encode("ascii")).decode("utf-8"))
                     creds = oauth_manager.credentials_from_token(token_data)
                     return GmailEmailProvider(service_factory=lambda: oauth_manager.service("gmail", "v1", creds=creds))

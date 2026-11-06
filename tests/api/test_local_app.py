@@ -183,8 +183,23 @@ def test_auth_session_cookie_handling():
         assert login_res.status_code == 307
         assert "accounts.google.com" in login_res.headers["location"]
 
-        # 3. Disconnect clears cookie
+        # 3. Callback sets session cookie with user email
+        cb_res = client.get("/auth/callback?code=fake-auth-code", follow_redirects=False)
+        assert cb_res.status_code == 302
+        assert "bridgeai_session_token" in cb_res.headers.get("set-cookie", "")
+
+        # 4. Status with session cookie returns connected and user email
+        status_res = client.get("/auth/status")
+        assert status_res.status_code == 200
+        assert status_res.json()["connected"] is True
+        assert status_res.json()["email"] == "user@example.com"
+
+        # 5. Disconnect clears cookie
         disco_res = client.post("/auth/disconnect")
         assert disco_res.status_code == 200
         assert "bridgeai_session_token" in disco_res.headers.get("set-cookie", "")
+
+        # 6. Status after disconnect is cleanly disconnected
+        final_res = client.get("/auth/status")
+        assert final_res.json() == {"connected": False, "email": None}
 

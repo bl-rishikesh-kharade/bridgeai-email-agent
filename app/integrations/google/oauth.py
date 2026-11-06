@@ -123,7 +123,7 @@ class GoogleOAuthManager:
         auth_url, _ = flow.authorization_url(
             access_type="offline",
             include_granted_scopes="false",
-            prompt="select_account",
+            prompt="consent select_account",
             state=state,
         )
         return auth_url, flow.code_verifier
@@ -142,14 +142,63 @@ class GoogleOAuthManager:
             flow.code_verifier = code_verifier
         flow.fetch_token(code=code)
         creds = flow.credentials
-        return json.loads(creds.to_json())
+        token_data = {
+            "token": creds.token,
+            "refresh_token": creds.refresh_token,
+            "token_uri": creds.token_uri or "https://oauth2.googleapis.com/token",
+            "client_id": creds.client_id or self.client_id,
+            "client_secret": creds.client_secret or self.client_secret,
+            "scopes": creds.scopes or self.scopes,
+            "expiry": creds.expiry.isoformat() if creds.expiry else None,
+        }
+        # Try extracting email if id_token was returned by Google token endpoint
+        id_token_raw = getattr(creds, "id_token", None) or getattr(flow.oauth2session, "token", {}).get("id_token")
+        if id_token_raw and isinstance(id_token_raw, str) and "." in id_token_raw:
+            try:
+                import base64
+                payload = id_token_raw.split(".")[1]
+                payload += "=" * (-len(payload) % 4)
+                claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")).decode("utf-8"))
+                if claims.get("email"):
+                    token_data["email"] = claims["email"]
+            except Exception:
+                pass
+        return token_data
 
     def credentials_from_token(self, token_data: dict | str):
         """Build Google Credentials object from token dictionary or JSON string."""
         from google.oauth2.credentials import Credentials
         if isinstance(token_data, str):
             token_data = json.loads(token_data)
-        return Credentials.from_authorized_user_info(token_data, self.scopes)
+
+        token = token_data.get("token") or token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")
+        client_id = token_data.get("client_id") or self.client_id
+        client_secret = token_data.get("client_secret") or self.client_secret
+        token_uri = token_data.get("token_uri") or "https://oauth2.googleapis.com/token"
+        scopes = token_data.get("scopes") or self.scopes
+        if isinstance(scopes, str):
+            scopes = scopes.split(" ")
+
+        expiry = None
+        if token_data.get("expiry"):
+            try:
+                from datetime import datetime
+                expiry = datetime.strptime(
+                    token_data["expiry"].rstrip("Z").split(".")[0], "%Y-%m-%dT%H:%M:%S"
+                )
+            except Exception:
+                pass
+
+        return Credentials(
+            token=token,
+            refresh_token=refresh_token,
+            token_uri=token_uri,
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=scopes,
+            expiry=expiry,
+        )
 
     def credentials(self):
         if self._credentials and self._credentials.valid and self._credentials.has_scopes(self.scopes):
@@ -227,9 +276,11 @@ class GoogleOAuthManager:
         with self._lock:
             self._credentials = None
             try:
-                self.token_path.unlink(missing_ok=True)
+                if self.token_path.is_file():
+                    self.token_path.unlink()
             except OSError as exc:
-                raise GoogleOAuthError("Saved Google authorization could not be cleared.") from exc
+                import logging
+                logging.getLogger(__name__).warning("Could not unlink token file %s: %s", self.token_path, exc)
 
     def _load_saved_credentials(self):
         if not self.credentials_path.is_file():

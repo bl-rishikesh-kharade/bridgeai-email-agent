@@ -17,6 +17,9 @@ def _decode_session_token(cookie_str: str) -> dict | None:
     try:
         if cookie_str.startswith("{"):
             return json.loads(cookie_str)
+        padding = 4 - (len(cookie_str) % 4)
+        if padding != 4:
+            cookie_str += "=" * padding
         raw = base64.urlsafe_b64decode(cookie_str.encode("ascii"))
         return json.loads(raw.decode("utf-8"))
     except Exception:
@@ -47,7 +50,6 @@ def build_router(oauth_manager, email_provider):
         if auth_cookie:
             token_data = _decode_session_token(auth_cookie)
             if token_data:
-                # Return cached email if available
                 cached_email = token_data.get("email")
                 if cached_email:
                     return {"connected": True, "email": cached_email}
@@ -55,7 +57,10 @@ def build_router(oauth_manager, email_provider):
                     session_provider = _resolve_session_provider(request)
                     return {"connected": True, "email": session_provider.get_account_email()}
                 except Exception:
-                    return {"connected": True, "email": "Google User"}
+                    try:
+                        return {"connected": True, "email": email_provider.get_account_email()}
+                    except Exception:
+                        return {"connected": True, "email": "Google User"}
 
         # 2. Check local saved authorization (Local Desktop mode)
         if not oauth_manager.has_saved_authorization():
@@ -98,16 +103,18 @@ def build_router(oauth_manager, email_provider):
         code_verifier = request.cookies.get("bridgeai_code_verifier")
         try:
             token_dict = oauth_manager.exchange_code_for_token(code, redirect_uri, code_verifier=code_verifier)
-            # Pre-fetch and cache user email in the token data
-            try:
-                creds = oauth_manager.credentials_from_token(token_dict)
-                temp_provider = GmailEmailProvider(service_factory=lambda: oauth_manager.service("gmail", "v1", creds=creds))
-                token_dict["email"] = temp_provider.get_account_email()
-            except Exception:
-                pass
+            # Pre-fetch and cache user email in the token data if not already set
+            if not token_dict.get("email"):
+                try:
+                    creds = oauth_manager.credentials_from_token(token_dict)
+                    temp_provider = GmailEmailProvider(service_factory=lambda: oauth_manager.service("gmail", "v1", creds=creds))
+                    token_dict["email"] = temp_provider.get_account_email()
+                except Exception as exc:
+                    import logging
+                    logging.getLogger(__name__).warning("Could not fetch user email during callback: %s", exc)
 
             response = RedirectResponse(url="/", status_code=302)
-            response.delete_cookie("bridgeai_code_verifier")
+            response.delete_cookie("bridgeai_code_verifier", path="/")
             # Set httpOnly session cookie with urlsafe base64 token
             response.set_cookie(
                 key="bridgeai_session_token",
@@ -116,6 +123,7 @@ def build_router(oauth_manager, email_provider):
                 samesite="lax",
                 secure=is_https,
                 max_age=60 * 60 * 24 * 7,  # 7 days
+                path="/",
             )
             return response
         except Exception as exc:
@@ -137,12 +145,16 @@ def build_router(oauth_manager, email_provider):
     @router.post("/disconnect")
     def disconnect(response: Response):
         """Disconnect and clear both session cookies and local authorization."""
-        response.delete_cookie("bridgeai_session_token")
+        response.delete_cookie("bridgeai_session_token", path="/")
+        response.delete_cookie("bridgeai_code_verifier", path="/")
         try:
             oauth_manager.disconnect()
+        except Exception:
+            pass
+        try:
             email_provider.reset_connection()
-            return {"connected": False, "email": None}
-        except GoogleOAuthError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except Exception:
+            pass
+        return {"connected": False, "email": None}
 
     return router

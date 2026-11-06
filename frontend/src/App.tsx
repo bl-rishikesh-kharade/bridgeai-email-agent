@@ -182,7 +182,7 @@ function App() {
               {connecting ? "Waiting for Google authorization…" : "Connect Google"}
             </button>
             <button className="auth-refresh" type="button" onClick={() => void checkAuth()} disabled={connecting}><RefreshCw size={14} /> Check connection again</button>
-            <p className="auth-privacy"><ShieldCheck size={14} /> Authorization is saved locally in token.json on this computer.</p>
+            <p className="auth-privacy"><ShieldCheck size={14} /> Authorization is encrypted and your credentials stay private.</p>
           </section>
         </main>
       </div>
