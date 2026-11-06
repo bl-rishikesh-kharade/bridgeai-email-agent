@@ -50,8 +50,18 @@ def build_router(oauth_manager, email_provider):
         if is_https and redirect_uri.startswith("http://"):
             redirect_uri = redirect_uri.replace("http://", "https://", 1)
         try:
-            auth_url = oauth_manager.get_authorization_url(redirect_uri)
-            return RedirectResponse(auth_url)
+            auth_url, code_verifier = oauth_manager.get_authorization_url(redirect_uri)
+            response = RedirectResponse(auth_url)
+            if code_verifier:
+                response.set_cookie(
+                    key="bridgeai_code_verifier",
+                    value=code_verifier,
+                    httponly=True,
+                    samesite="lax",
+                    secure=is_https,
+                    max_age=600,  # 10 minutes
+                )
+            return response
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Failed to generate authorization URL: {exc}") from exc
 
@@ -62,9 +72,11 @@ def build_router(oauth_manager, email_provider):
         is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https" or "vercel.app" in str(request.base_url)
         if is_https and redirect_uri.startswith("http://"):
             redirect_uri = redirect_uri.replace("http://", "https://", 1)
+        code_verifier = request.cookies.get("bridgeai_code_verifier")
         try:
-            token_dict = oauth_manager.exchange_code_for_token(code, redirect_uri)
+            token_dict = oauth_manager.exchange_code_for_token(code, redirect_uri, code_verifier=code_verifier)
             response = RedirectResponse(url="/", status_code=302)
+            response.delete_cookie("bridgeai_code_verifier")
             # Set httpOnly session cookie with the user's token
             response.set_cookie(
                 key="bridgeai_session_token",

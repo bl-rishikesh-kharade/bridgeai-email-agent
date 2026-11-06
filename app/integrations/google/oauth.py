@@ -106,15 +106,14 @@ class GoogleOAuthManager:
             return data
         raise GoogleOAuthError(f"OAuth client file not found: {self.credentials_path}")
 
-    def get_authorization_url(self, redirect_uri: str, state: str | None = None) -> str:
-        """Build Google web authorization redirect URL."""
+    def get_authorization_url(self, redirect_uri: str, state: str | None = None) -> tuple[str, str | None]:
+        """Build Google web authorization redirect URL and return (auth_url, code_verifier)."""
         from google_auth_oauthlib.flow import Flow
         client_config = self.get_client_config()
         flow = Flow.from_client_config(
             client_config,
             scopes=self.scopes,
             redirect_uri=redirect_uri,
-            autogenerate_code_verifier=False,
         )
         auth_url, _ = flow.authorization_url(
             access_type="offline",
@@ -122,10 +121,10 @@ class GoogleOAuthManager:
             prompt="select_account",
             state=state,
         )
-        return auth_url
+        return auth_url, flow.code_verifier
 
-    def exchange_code_for_token(self, code: str, redirect_uri: str) -> dict:
-        """Exchange Google authorization code for token dictionary."""
+    def exchange_code_for_token(self, code: str, redirect_uri: str, code_verifier: str | None = None) -> dict:
+        """Exchange Google authorization code for token dictionary with PKCE support."""
         from google_auth_oauthlib.flow import Flow
         client_config = self.get_client_config()
         flow = Flow.from_client_config(
@@ -134,6 +133,8 @@ class GoogleOAuthManager:
             redirect_uri=redirect_uri,
             autogenerate_code_verifier=False,
         )
+        if code_verifier:
+            flow.code_verifier = code_verifier
         flow.fetch_token(code=code)
         creds = flow.credentials
         return json.loads(creds.to_json())

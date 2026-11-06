@@ -154,7 +154,10 @@ def test_auth_session_cookie_handling():
 
         def get_authorization_url(self, redirect_uri):
             self.redirect_urls.append(redirect_uri)
-            return f"https://accounts.google.com/o/oauth2/v2/auth?redirect_uri={redirect_uri}"
+            return f"https://accounts.google.com/o/oauth2/v2/auth?redirect_uri={redirect_uri}", "verifier-123"
+
+        def exchange_code_for_token(self, code, redirect_uri, code_verifier=None):
+            return {"token": "test-token"}
 
         def credentials_from_token(self, token_data):
             return token_data
