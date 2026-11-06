@@ -113,7 +113,10 @@ def build_router(oauth_manager, email_provider):
                     import logging
                     logging.getLogger(__name__).warning("Could not fetch user email during callback: %s", exc)
 
-            response = RedirectResponse(url="/", status_code=302)
+            response = RedirectResponse(url="/", status_code=303)
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
             response.delete_cookie("bridgeai_code_verifier", path="/")
             # Set httpOnly session cookie with urlsafe base64 token
             response.set_cookie(

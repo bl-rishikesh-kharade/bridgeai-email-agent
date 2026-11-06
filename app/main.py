@@ -40,6 +40,16 @@ def create_app():
     app.include_router(build_auth_router(oauth, email_provider))
     app.include_router(build_agent_router(chat_service, email_provider, oauth_manager=oauth))
 
+    @app.middleware("http")
+    async def add_no_cache_headers(request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.endswith(".html") or path.startswith("/auth/"):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
     static_dir = Path(__file__).parent / "static"
     frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
     react_ui_dir = frontend_dist if (frontend_dist / "index.html").is_file() else (static_dir / "react-ui")
@@ -49,7 +59,14 @@ def create_app():
     @app.get("/", include_in_schema=False)
     def home():
         react_index = react_ui_dir / "index.html"
-        return FileResponse(react_index if react_index.is_file() else static_dir / "index.html")
+        return FileResponse(
+            react_index if react_index.is_file() else static_dir / "index.html",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
 
     return app
 

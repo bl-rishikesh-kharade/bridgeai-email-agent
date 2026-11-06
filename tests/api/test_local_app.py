@@ -185,7 +185,7 @@ def test_auth_session_cookie_handling():
 
         # 3. Callback sets session cookie with user email
         cb_res = client.get("/auth/callback?code=fake-auth-code", follow_redirects=False)
-        assert cb_res.status_code == 302
+        assert cb_res.status_code == 303
         assert "bridgeai_session_token" in cb_res.headers.get("set-cookie", "")
 
         # 4. Status with session cookie returns connected and user email
