@@ -131,3 +131,57 @@ def test_agent_chat_accepts_history_buffer():
         assert captured[0].role == "user"
         assert captured[1].role == "model"
         assert captured[2].role == "user"
+
+
+def test_vercel_serverless_entrypoint():
+    import api.index
+    assert api.index.app is not None
+    assert api.index.app.title == "BridgeAI Email Agent"
+
+
+def test_auth_session_cookie_handling():
+    import json
+    from fastapi import FastAPI
+    from app.api.routes.auth import build_router as build_auth_router
+    from tests.fakes import FakeEmailProvider
+
+    class FakeOAuth:
+        def __init__(self):
+            self.redirect_urls = []
+
+        def has_saved_authorization(self):
+            return False
+
+        def get_authorization_url(self, redirect_uri):
+            self.redirect_urls.append(redirect_uri)
+            return f"https://accounts.google.com/o/oauth2/v2/auth?redirect_uri={redirect_uri}"
+
+        def credentials_from_token(self, token_data):
+            return token_data
+
+        def service(self, name, version, creds=None):
+            return None
+
+        def disconnect(self):
+            pass
+
+    fake_oauth = FakeOAuth()
+    fake_provider = FakeEmailProvider()
+    test_app = FastAPI()
+    test_app.include_router(build_auth_router(fake_oauth, fake_provider))
+
+    with TestClient(test_app) as client:
+        # 1. Unauthenticated
+        res = client.get("/auth/status")
+        assert res.json() == {"connected": False, "email": None}
+
+        # 2. Login initiates redirect
+        login_res = client.get("/auth/login", follow_redirects=False)
+        assert login_res.status_code == 307
+        assert "accounts.google.com" in login_res.headers["location"]
+
+        # 3. Disconnect clears cookie
+        disco_res = client.post("/auth/disconnect")
+        assert disco_res.status_code == 200
+        assert "bridgeai_session_token" in disco_res.headers.get("set-cookie", "")
+

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { ArrowUp, LoaderCircle, LogOut, Mail, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 
-type AuthStatus = { connected: boolean; email?: string | null; detail?: string };
+type AuthStatus = { connected: boolean; email?: string | null; detail?: string; redirect?: string };
 type ChatEmailOption = {
   id: string;
   gmail_url?: string | null;
@@ -76,6 +76,10 @@ function App() {
       const response = await fetch("/auth/connect", { method: "POST" });
       const data = await response.json().catch(() => ({})) as AuthStatus;
       if (!response.ok) throw new Error(data.detail || "Google authorization could not be completed.");
+      if (data.redirect) {
+        window.location.href = data.redirect;
+        return;
+      }
       setAuth(data);
     } catch (caught) {
       setAuthError(caught instanceof Error ? caught.message : "Google authorization could not be completed.");

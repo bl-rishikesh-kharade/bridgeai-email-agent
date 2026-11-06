@@ -101,11 +101,15 @@ class EmailAgentTools:
             )
             return ToolOutcome({"error": "The requested operation is temporarily unavailable. Please try again."})
 
+    def _resolve_provider(self, request_context: dict[str, Any]):
+        return request_context.get("email_provider") or self.email_provider
+
     def _resolve_email_id(self, args: EmailIdArgs, request_context: dict[str, Any]) -> str | None:
         return args.email_id or request_context.get("selected_email_id") or request_context.get("current_email_id")
 
-    def _list_emails(self, args: ListEmailsArgs, _request_context: dict[str, Any]) -> ToolOutcome:
-        raw = self.email_provider.list_emails(min(args.limit, settings.max_email_list_limit))
+    def _list_emails(self, args: ListEmailsArgs, request_context: dict[str, Any]) -> ToolOutcome:
+        provider = self._resolve_provider(request_context)
+        raw = provider.list_emails(min(args.limit, settings.max_email_list_limit))
         ranked = self.signal_engine.filter_and_rank_emails(raw, only_important=False, limit=args.limit)
         emails = [item[0] for item in ranked]
         reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked]
@@ -117,8 +121,9 @@ class EmailAgentTools:
             clear_current_email=not emails,
         )
 
-    def _search_emails(self, args: SearchEmailsArgs, _request_context: dict[str, Any]) -> ToolOutcome:
-        raw = self.email_provider.search_emails(args.query, limit=args.limit, sender_only=args.sender_only)
+    def _search_emails(self, args: SearchEmailsArgs, request_context: dict[str, Any]) -> ToolOutcome:
+        provider = self._resolve_provider(request_context)
+        raw = provider.search_emails(args.query, limit=args.limit, sender_only=args.sender_only)
         if args.unread_only:
             raw = [e for e in raw if not e.is_read]
         ranked = self.signal_engine.filter_and_rank_emails(raw, only_important=False, limit=args.limit)
@@ -133,15 +138,16 @@ class EmailAgentTools:
         )
 
     def _get_email(self, args: EmailIdArgs, request_context: dict[str, Any]) -> ToolOutcome:
+        provider = self._resolve_provider(request_context)
         email_id = self._resolve_email_id(args, request_context)
         if not email_id:
             return ToolOutcome({"error": "Select an email or specify its exact email ID first."})
-        email = self.email_provider.get_email(email_id)
+        email = provider.get_email(email_id)
         if email is None:
             return ToolOutcome({"error": "That exact email was not found or is inaccessible. No other email was substituted."},
                                clear_current_email=True)
         return ToolOutcome({"email": {**self._email_brief(email), "body": email.body[:settings.max_email_body_chars]},
-                            "gmail_url": self.email_provider.gmail_url(email)},
+                            "gmail_url": provider.gmail_url(email)},
                            emails=[email], current_email_id=email.id)
 
     def _review_email(self, args: EmailIdArgs, request_context: dict[str, Any]) -> ToolOutcome:
@@ -153,8 +159,9 @@ class EmailAgentTools:
         review = self._analysis_dict(email.id, analysis)
         return ToolOutcome({"review": review}, emails=[email], reviews=[review], current_email_id=email.id)
 
-    def _filter_unread(self, args: FilterArgs, _request_context: dict[str, Any]) -> ToolOutcome:
+    def _filter_unread(self, args: FilterArgs, request_context: dict[str, Any]) -> ToolOutcome:
         strategy = getattr(settings, "importance_strategy", "signals")
+        provider = self._resolve_provider(request_context)
         # Display limit defaults to 50 if not specified
         display_limit = min(args.limit, 50) if args.limit else 50
 
@@ -163,9 +170,9 @@ class EmailAgentTools:
             # (No 48-hour cut-off, ensuring older unread critical/high emails are never missed)
             pool_limit = 100
             try:
-                unread_pool = self.email_provider.list_filtered_emails("unread", limit=pool_limit)
+                unread_pool = provider.list_filtered_emails("unread", limit=pool_limit)
             except Exception:
-                unread_pool = self.email_provider.list_emails(limit=pool_limit)
+                unread_pool = provider.list_emails(limit=pool_limit)
 
             # 2. Priority Engine: Filter by signals, respecting sender and keyword exclusions, and sort strictly by priority
             # (Critical > High > Medium > Low, with newest timestamp within each tier)
@@ -196,7 +203,7 @@ class EmailAgentTools:
             )
 
         # Strategy == "gmail" (Gmail native label:IMPORTANT)
-        gmail_emails = self.email_provider.list_filtered_emails("important_unread", limit=display_limit)
+        gmail_emails = provider.list_filtered_emails("important_unread", limit=display_limit)
         ranked_gmail = self.signal_engine.filter_and_rank_emails(
             gmail_emails,
             only_important=False,

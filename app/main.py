@@ -38,7 +38,7 @@ def create_app():
 
     app.include_router(health_router)
     app.include_router(build_auth_router(oauth, email_provider))
-    app.include_router(build_agent_router(chat_service, email_provider))
+    app.include_router(build_agent_router(chat_service, email_provider, oauth_manager=oauth))
 
     static_dir = Path(__file__).parent / "static"
     react_ui_dir = static_dir / "react-ui"

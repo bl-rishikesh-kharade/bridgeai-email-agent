@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # OAuth
     oauth_credentials_path: str = "credentials/credentials.json"
     oauth_token_path: str = "token.json"
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str | None = None
     oauth_scopes: list[str] = [
         "https://www.googleapis.com/auth/gmail.readonly",
     ]
