@@ -222,5 +222,7 @@ class GmailEmailProvider:
             raise ValueError("Email search query must contain between 1 and 200 characters.")
         if not 1 <= limit <= 500:
             raise ValueError("Email search limit must be between 1 and 500.")
-        gmail_query = f'from:"{clean_query}"' if sender_only else f'"{clean_query}"'
+        operators = ("after:", "before:", "newer_than:", "older_than:", "from:", "to:", "subject:", "is:", "has:", "label:")
+        has_operator = any(op in clean_query.lower() for op in operators)
+        gmail_query = f'from:"{clean_query}"' if sender_only else (clean_query if has_operator else f'"{clean_query}"')
         return self.list_emails(limit, query=gmail_query)

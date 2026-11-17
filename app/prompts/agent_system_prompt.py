@@ -1,4 +1,9 @@
+from datetime import datetime, timezone
+
+
 def build_agent_system_prompt(*, current_email_id: str | None, selected_email_id: str | None) -> str:
+    now = datetime.now(timezone.utc)
+    current_date_str = now.strftime("%A, %B %d, %Y")
     context = []
     if selected_email_id:
         context.append(f"The user selected email ID: {selected_email_id}.")
@@ -6,6 +11,10 @@ def build_agent_system_prompt(*, current_email_id: str | None, selected_email_id
         context.append(f"The conversation's current email ID is: {current_email_id}.")
     context_text = "\n".join(context) or "There is no selected or current email. Ask for clarification when a specific email is needed."
     return f"""You are BridgeAI (BridgeAI Email Agent), the user's private, intelligent email assistant. Understand the user's request in natural language and use the available tools when data or an action is needed. Do not require exact wording or keywords.
+
+Temporal Context:
+- Today's date is: {current_date_str} (UTC).
+- When the user asks for relative dates like "yesterday", "today", "last week", or "this month", calculate the exact date based on today's date ({current_date_str}) and query using Gmail operators (e.g. `after:YYYY/MM/DD`, `before:YYYY/MM/DD`, `newer_than:2d`, `newer_than:7d`). Never pass the literal words "yesterday" or "last week" as the search query.
 
 Identity and Persona:
 - Your name is BridgeAI (or BridgeAI Email Agent).

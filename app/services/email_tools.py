@@ -16,14 +16,14 @@ class _Args(BaseModel):
 
 
 class ListEmailsArgs(_Args):
-    limit: int = Field(default=10, ge=1, le=20)
+    limit: int = Field(default=10, ge=1, le=100)
 
 
 class SearchEmailsArgs(_Args):
     query: str = Field(min_length=1, max_length=200)
     sender_only: bool = False
     unread_only: bool = False
-    limit: int = Field(default=10, ge=1, le=50)
+    limit: int = Field(default=10, ge=1, le=100)
 
 
 class EmailIdArgs(_Args):
@@ -48,8 +48,8 @@ class ToolOutcome:
 
 
 TOOL_DECLARATIONS = [
-    {"name": "list_recent_emails", "description": "List recent emails from the user's mailbox.", "parameters_json_schema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 50}}, "additionalProperties": False}},
-    {"name": "search_emails", "description": "Find matching emails by topic, subject, sender, or date constraints. You can search for unread emails (set unread_only: true), date ranges using Gmail query syntax (e.g. after:2026/10/01 before:2026/11/01), or specific senders/topics.", "parameters_json_schema": {"type": "object", "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200}, "sender_only": {"type": "boolean"}, "unread_only": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50}}, "required": ["query"], "additionalProperties": False}},
+    {"name": "list_recent_emails", "description": "List recent emails from the user's mailbox.", "parameters_json_schema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 100}}, "additionalProperties": False}},
+    {"name": "search_emails", "description": "Find matching emails by topic, subject, sender, or date constraints. You can search for unread emails (set unread_only: true), date ranges using Gmail query syntax (e.g. after:2026/10/01 before:2026/11/01, newer_than:7d, newer_than:2d), or specific senders/topics.", "parameters_json_schema": {"type": "object", "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200}, "sender_only": {"type": "boolean"}, "unread_only": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": ["query"], "additionalProperties": False}},
     {"name": "get_email", "description": "Retrieve one exact email by ID, or the selected/current email when email_id is omitted.", "parameters_json_schema": {"type": "object", "properties": {"email_id": {"type": "string", "maxLength": 256}}, "additionalProperties": False}},
     {"name": "review_email", "description": "Summarize and analyze one exact email, including priority and action items.", "parameters_json_schema": {"type": "object", "properties": {"email_id": {"type": "string", "maxLength": 256}}, "additionalProperties": False}},
     {"name": "filter_unread_emails", "description": "Find unread important emails from the user's mailbox using priority signals. You can supply exclude_senders to omit specific senders/domains (e.g. ['chitkara.edu.in']), and exclude_keywords to omit specific topics or words (e.g. ['circular', 'newsletter', 'fee']).", "parameters_json_schema": {"type": "object", "properties": {"filter_id": {"type": "string", "enum": ["important_unread"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}, "exclude_senders": {"type": "array", "items": {"type": "string"}}, "exclude_keywords": {"type": "array", "items": {"type": "string"}}}, "required": ["filter_id"], "additionalProperties": False}},
@@ -163,13 +163,13 @@ class EmailAgentTools:
     def _filter_unread(self, args: FilterArgs, request_context: dict[str, Any]) -> ToolOutcome:
         strategy = getattr(settings, "importance_strategy", "signals")
         provider = self._resolve_provider(request_context)
-        # Display limit defaults to 50 if not specified
-        display_limit = min(args.limit, 50) if args.limit else 50
+        # Display limit defaults to 100 if not specified
+        display_limit = min(args.limit, 100) if args.limit else 100
 
         if strategy == "signals":
-            # 1. Candidate Pool: Always fetch a 100-email unread pool directly from Gmail
+            # 1. Candidate Pool: Always fetch a 150-email unread pool directly from Gmail
             # (No 48-hour cut-off, ensuring older unread critical/high emails are never missed)
-            pool_limit = 100
+            pool_limit = 150
             try:
                 unread_pool = provider.list_filtered_emails("unread", limit=pool_limit)
             except Exception:
