@@ -24,9 +24,16 @@ def extract_clean_summary(body: str | None, max_length: int = 150) -> str:
     if not body:
         return ""
 
-    # Unescape HTML entities & strip HTML tags
-    text = html.unescape(body)
+    # Remove <style>...</style>, <script>...</script>, <head>...</head> blocks and comments completely
+    text = re.sub(r"(?is)<(style|script|head)[^>]*>.*?</\1>", " ", body)
+    text = re.sub(r"(?s)<!--.*?-->", " ", text)
+    # Strip HTML tags
     text = re.sub(r"<[^>]+>", " ", text)
+    # Unescape HTML entities (&amp;, &nbsp;, etc.)
+    text = html.unescape(text)
+    # Remove CSS fragments or rules if any leaked through (e.g. { ... } or property: value;)
+    text = re.sub(r"\{[^}]*\}", " ", text)
+    text = re.sub(r"(?i)\b(?:display|margin|padding|font-size|font-family|color|border|line-height|text-align)\s*:[^;]+;?", " ", text)
     # Remove raw URLs
     text = URL_REGEX.sub("", text)
 
