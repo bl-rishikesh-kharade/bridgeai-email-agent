@@ -31,9 +31,12 @@ def extract_clean_summary(body: str | None, max_length: int = 150) -> str:
     text = re.sub(r"<[^>]+>", " ", text)
     # Unescape HTML entities (&amp;, &nbsp;, etc.)
     text = html.unescape(text)
-    # Remove CSS fragments or rules if any leaked through (e.g. { ... } or property: value;)
-    text = re.sub(r"\{[^}]*\}", " ", text)
-    text = re.sub(r"(?i)\b(?:display|margin|padding|font-size|font-family|color|border|line-height|text-align)\s*:[^;]+;?", " ", text)
+    # Remove CSS rules with selector and block: e.g. .className { ... } or hr.style { ... }
+    text = re.sub(r"(?s)[^{};<>\n]*\{[^}]*\}", " ", text)
+    # Remove stray CSS declarations: e.g. display: block; margin: 0 auto;
+    text = re.sub(r"(?i)\b[a-z-]+\s*:\s*[^;:<\n]+;", " ", text)
+    # Remove orphaned CSS selectors/classes: e.g. .textVerdana12 or hr.style-three or #id
+    text = re.sub(r"(?:\.[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+|#[a-zA-Z0-9_-]+)", " ", text)
     # Remove raw URLs
     text = URL_REGEX.sub("", text)
 

@@ -56,3 +56,14 @@ def test_extract_clean_summary_removes_css_and_style_tags():
     assert "textVerdana" not in summary
     assert "font-size" not in summary
     assert "New circular regarding Seating Plan for Numerical Aptitude test in Block 3 on 17/11/2026." in summary
+
+
+def test_extract_clean_summary_removes_plain_text_css_selectors():
+    body = (
+        ".textVerdana12 .textVerdana14 hr.style-three "
+        "Chitkara University NEW CIRCULAR A new circular with title Seating Plan | Numerical Aptitude & Logical Reasoning - I has been shared."
+    )
+    summary = extract_clean_summary(body)
+    assert "textVerdana" not in summary
+    assert "style-three" not in summary
+    assert "Chitkara University NEW CIRCULAR A new circular with title Seating Plan" in summary

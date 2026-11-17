@@ -209,8 +209,10 @@ class GmailEmailProvider:
     def gmail_url(self, email: Email) -> str:
         thread_id = email.thread_id or email.id
         try:
-            account = urlencode({"authuser": self.get_account_email()})
-            return f"https://mail.google.com/mail/?{account}#all/{quote(thread_id, safe='')}"
+            account = self.get_account_email()
+            if account:
+                return f"https://mail.google.com/mail/u/{quote(account, safe='')}/#all/{quote(thread_id, safe='')}"
+            return f"https://mail.google.com/mail/#all/{quote(thread_id, safe='')}"
         except Exception:
             return f"https://mail.google.com/mail/#all/{quote(thread_id, safe='')}"
 
