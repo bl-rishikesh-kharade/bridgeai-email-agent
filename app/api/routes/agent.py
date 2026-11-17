@@ -3,6 +3,7 @@ from fastapi import APIRouter, Request
 
 from app.schemas.agent import AgentChatRequest, AgentChatResponse
 from app.integrations.email.gmail_provider import GmailEmailProvider
+from app.services.email_summary import extract_clean_summary
 
 
 def build_router(chat_service, email_provider, oauth_manager=None):
@@ -55,7 +56,7 @@ def build_router(chat_service, email_provider, oauth_manager=None):
                     "receiver": str(email.receiver),
                     "body_snippet": email.body[:300].strip() if email.body else None,
                     "received_at": email.received_at,
-                    "summary": reviews_by_email_id.get(email.id, {}).get("summary"),
+                    "summary": reviews_by_email_id.get(email.id, {}).get("summary") or extract_clean_summary(email.body),
                     "priority": reviews_by_email_id.get(email.id, {}).get("priority"),
                     "requires_action": reviews_by_email_id.get(email.id, {}).get("requires_action"),
                     "requires_attention": reviews_by_email_id.get(email.id, {}).get("requires_attention"),

@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.logger import log_event
 from app.schemas.ai_analysis import AIAnalysis
 from app.services.email_signals import EmailSignalEngine
+from app.services.email_summary import extract_clean_summary
 
 
 class _Args(BaseModel):
@@ -231,7 +232,7 @@ class EmailAgentTools:
     def _email_brief(email: Any) -> dict[str, Any]:
         return {"id": email.id, "sender": str(email.sender), "subject": email.subject,
                 "received_at": email.received_at.isoformat() if email.received_at else None,
-                "is_read": email.is_read}
+                "is_read": email.is_read, "summary": extract_clean_summary(email.body)}
 
     @staticmethod
     def _analysis_dict(email_id: str, result: AIAnalysis) -> dict[str, Any]:

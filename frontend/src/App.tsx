@@ -12,6 +12,7 @@ type ChatEmailOption = {
   receiver?: string | null;
   body_snippet?: string | null;
   received_at?: string | null;
+  summary?: string | null;
   priority?: "Critical" | "High" | "Medium" | "Low" | null;
 };
 type ChatResponse = {
@@ -264,6 +265,9 @@ function App() {
                                   {email.sender}
                                   {email.received_at ? ` · ${new Date(email.received_at).toLocaleString()}` : ""}
                                 </span>
+                                {email.summary ? (
+                                  <p className="email-option-summary">{email.summary}</p>
+                                ) : null}
                               </div>
                               {email.gmail_url && <a className="email-view-link" href={email.gmail_url} target="_blank" rel="noopener noreferrer">View in Gmail</a>}
                             </article>
