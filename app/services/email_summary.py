@@ -3,6 +3,10 @@
 import html
 import re
 
+from typing import Any
+from pydantic import BaseModel
+from app.core.logger import logger
+
 GREETING_REGEX = re.compile(
     r"^(?:dear\s+[^,\n]+|hello\s*[^,\n]*|hi\s*[^,\n]*|hey\s*[^,\n]*|greetings|good\s+(?:morning|afternoon|evening))[,\s]*",
     re.IGNORECASE,
@@ -17,6 +21,15 @@ BOILERPLATE_REGEX = re.compile(
 )
 URL_REGEX = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 EMAIL_HEADER_REGEX = re.compile(r"^(?:from|to|subject|date|sent|cc|bcc):\s*.*$", re.IGNORECASE)
+
+
+class EmailBatchSummaryItem(BaseModel):
+    id: str
+    summary: str
+
+
+class EmailBatchSummaryResponse(BaseModel):
+    summaries: list[EmailBatchSummaryItem] = []
 
 
 def extract_clean_summary(body: str | None, max_length: int = 150) -> str:
@@ -83,3 +96,57 @@ def extract_clean_summary(body: str | None, max_length: int = 150) -> str:
     # Cleanly truncate at word boundary
     truncated = combined[:max_length].rsplit(" ", 1)[0].rstrip(" ,;:-")
     return f"{truncated}..."
+
+
+def batch_summarize_emails(emails: list[Any], ai_service=None) -> dict[str, str]:
+    """Generate concise 1-sentence abstractive summaries in own words using a single Gemini call.
+
+    Falls back instantly to deterministic extraction if Gemini is unavailable or rate-limited.
+    """
+    if not emails:
+        return {}
+
+    # Target the top 15 emails to keep the single prompt compact and responsive
+    target_emails = emails[:15]
+
+    try:
+        if ai_service is None:
+            from app.services.ai_service import get_ai_service
+            service = get_ai_service()
+        else:
+            service = ai_service
+    except Exception as exc:
+        logger.info("AI service unavailable for batch summary (%s); using in-memory extractor", exc)
+        return {e.id: extract_clean_summary(e.body) for e in target_emails}
+
+    email_blocks = []
+    for e in target_emails:
+        clean_text = extract_clean_summary(e.body, max_length=500) or e.subject
+        email_blocks.append(f"[Email ID: {e.id}]\nSubject: {e.subject}\nSnippet: {clean_text}")
+
+    prompt = (
+        "Summarize each of the following emails in a single concise sentence in your own words. "
+        "Focus strictly on the primary announcement, update, or action required. "
+        "Do not repeat greetings, signatures, or raw metadata.\n\n"
+        + "\n\n".join(email_blocks)
+    )
+
+    try:
+        resp = service._generate_content(
+            "batch_email_summary",
+            prompt,
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": EmailBatchSummaryResponse,
+            },
+        )
+        parsed = EmailBatchSummaryResponse.model_validate_json(resp.text)
+        summaries = {item.id: item.summary.strip() for item in parsed.summaries if item.id and item.summary}
+        # Fill any missing email IDs with the fast extractor
+        for e in target_emails:
+            if e.id not in summaries or not summaries[e.id]:
+                summaries[e.id] = extract_clean_summary(e.body)
+        return summaries
+    except Exception as exc:
+        logger.warning("Batched Gemini summarization failed (%s); falling back to in-memory extractor", exc)
+        return {e.id: extract_clean_summary(e.body) for e in target_emails}

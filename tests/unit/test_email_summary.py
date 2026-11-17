@@ -67,3 +67,39 @@ def test_extract_clean_summary_removes_plain_text_css_selectors():
     assert "textVerdana" not in summary
     assert "style-three" not in summary
     assert "Chitkara University NEW CIRCULAR A new circular with title Seating Plan" in summary
+
+
+def test_batch_summarize_emails_with_mock_ai():
+    from app.services.email_summary import batch_summarize_emails
+    from app.schemas.email import Email
+
+    class FakeAIService:
+        def _generate_content(self, operation, prompt, config=None):
+            return type("FakeResp", (), {
+                "text": '{"summaries": [{"id": "e-1", "summary": "Seating plan published for Batch 2024 exam."}]}'
+            })()
+
+    emails = [
+        Email(id="e-1", provider_message_id="p-1", sender="admin@chitkara.edu.in",
+              receiver="me@example.com", subject="Seating plan",
+              body="Dear student, the exam will be held in Block 3.")
+    ]
+    results = batch_summarize_emails(emails, ai_service=FakeAIService())
+    assert results["e-1"] == "Seating plan published for Batch 2024 exam."
+
+
+def test_batch_summarize_emails_fallback_on_failure():
+    from app.services.email_summary import batch_summarize_emails
+    from app.schemas.email import Email
+
+    class BrokenAIService:
+        def _generate_content(self, *args, **kwargs):
+            raise RuntimeError("API quota reached")
+
+    emails = [
+        Email(id="e-2", provider_message_id="p-2", sender="hr@company.com",
+              receiver="me@example.com", subject="Offer letter",
+              body="Hello Karthik, Please find the attached employment contract.")
+    ]
+    results = batch_summarize_emails(emails, ai_service=BrokenAIService())
+    assert "Please find the attached employment contract." in results["e-2"]

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request
 
 from app.schemas.agent import AgentChatRequest, AgentChatResponse
 from app.integrations.email.gmail_provider import GmailEmailProvider
-from app.services.email_summary import extract_clean_summary
+from app.services.email_summary import batch_summarize_emails, extract_clean_summary
 
 
 def build_router(chat_service, email_provider, oauth_manager=None):
@@ -38,11 +38,16 @@ def build_router(chat_service, email_provider, oauth_manager=None):
             "history": [turn.model_dump() for turn in request.history],
             "email_provider": active_provider,
         })
+        email_results = result.get("email_results", [])
         reviews_by_email_id = {
             review["email_id"]: review
             for review in result.get("email_reviews", [])
             if review.get("email_id")
         }
+        # Run batched Gemini summarization on unreviewed emails in a single request
+        unreviewed = [e for e in email_results if not reviews_by_email_id.get(e.id, {}).get("summary")]
+        batch_summaries = batch_summarize_emails(unreviewed) if unreviewed else {}
+
         return AgentChatResponse(
             response=result.get("response", "I couldn't complete that request."),
             current_email_id=result.get("current_email_id"),
@@ -56,13 +61,17 @@ def build_router(chat_service, email_provider, oauth_manager=None):
                     "receiver": str(email.receiver),
                     "body_snippet": email.body[:300].strip() if email.body else None,
                     "received_at": email.received_at,
-                    "summary": reviews_by_email_id.get(email.id, {}).get("summary") or extract_clean_summary(email.body),
+                    "summary": (
+                        reviews_by_email_id.get(email.id, {}).get("summary")
+                        or batch_summaries.get(email.id)
+                        or extract_clean_summary(email.body)
+                    ),
                     "priority": reviews_by_email_id.get(email.id, {}).get("priority"),
                     "requires_action": reviews_by_email_id.get(email.id, {}).get("requires_action"),
                     "requires_attention": reviews_by_email_id.get(email.id, {}).get("requires_attention"),
                     "action_items": reviews_by_email_id.get(email.id, {}).get("action_items", []),
                 }
-                for email in result.get("email_results", [])
+                for email in email_results
             ],
         )
 
