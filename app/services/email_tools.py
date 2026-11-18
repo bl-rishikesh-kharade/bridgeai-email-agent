@@ -91,6 +91,7 @@ class EmailAgentTools:
                 if nested is None:
                     break
                 root_cause = nested
+            response = getattr(root_cause, "resp", None)
             status_code = getattr(response, "status", None)
             is_auth_error = isinstance(root_cause, GmailAuthorizationError) or status_code == 403
             log_event(
