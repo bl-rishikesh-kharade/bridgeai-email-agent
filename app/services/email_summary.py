@@ -136,7 +136,7 @@ def batch_summarize_emails(emails: list[Any], ai_service=None) -> dict[str, str]
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=EmailBatchSummaryResponse,
-            http_options=types.HttpOptions(timeout=4000),  # 4s max to keep UI super fast
+            http_options=types.HttpOptions(timeout=10000),  # 10s minimum allowed by Google API
         )
         resp = service._generate_content("batch_email_summary", prompt, config=config)
         parsed = EmailBatchSummaryResponse.model_validate_json(resp.text)
