@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.core.config import settings
 from app.core.logger import log_event
+from app.integrations.email.gmail_provider import GmailAuthorizationError
 from app.schemas.ai_analysis import AIAnalysis
 from app.services.email_signals import EmailSignalEngine
 from app.services.email_summary import extract_clean_summary
@@ -90,16 +91,19 @@ class EmailAgentTools:
                 if nested is None:
                     break
                 root_cause = nested
-            response = getattr(root_cause, "resp", None)
+            status_code = getattr(response, "status", None)
+            is_auth_error = isinstance(root_cause, GmailAuthorizationError) or status_code == 403
             log_event(
                 "agent.tool.failed", level=logging.ERROR, tool_name=name,
                 error_type=type(exc).__name__,
                 cause_type=type(root_cause).__name__ if root_cause is not exc else None,
-                status_code=getattr(response, "status", None),
+                status_code=status_code,
                 api_status=getattr(root_cause, "status", None),
                 winerror=getattr(root_cause, "winerror", None),
                 errno=getattr(root_cause, "errno", None),
             )
+            if is_auth_error:
+                return ToolOutcome({"error": "authorization_expired"})
             return ToolOutcome({"error": "The requested operation is temporarily unavailable. Please try again."})
 
     def _resolve_provider(self, request_context: dict[str, Any]):

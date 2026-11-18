@@ -232,10 +232,21 @@ class ChatService:
                 }
             outcome = self.toolset.execute(call.name, call.arguments, request_context)
             if "error" in outcome.data:
+                err = outcome.data.get("error", "")
+                if err == "authorization_expired":
+                    error_msg = (
+                        "Your Google session has expired or requires re-authentication. "
+                        "Please click **Switch account** in the top right to reconnect your Google account."
+                    )
+                else:
+                    error_msg = (
+                        "I couldn't reach Gmail right now due to a temporary network issue. "
+                        "Please try sending your message again in a moment."
+                    )
                 return {
                     "messages": messages,
                     "tool_calls": [],
-                    "response": "I couldn't access Gmail to complete that request. Check your Google connection and try again.",
+                    "response": error_msg,
                     "email_results": results,
                     "email_reviews": reviews,
                     "current_email_id": current_id,

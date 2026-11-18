@@ -160,6 +160,8 @@ class GmailEmailProvider:
         except GmailProviderError:
             raise
         except Exception as exc:
+            if getattr(exc, "resp", None) is not None and getattr(exc.resp, "status", None) == 403:
+                raise GmailAuthorizationError("Gmail access is denied; check the authorized Workspace account and read-only scope.") from exc
             raise GmailProviderError("Gmail message listing failed.") from exc
 
     def list_filtered_emails(self, filter_id: str, limit: int = 20) -> list[Email]:
