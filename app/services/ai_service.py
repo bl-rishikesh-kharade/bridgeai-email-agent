@@ -71,10 +71,12 @@ class AIService:
                 status = getattr(exc, "code", None)
                 err_msg = str(exc)
                 is_transient = (
-                    status in {404, 429, 503}
+                    status in {404, 429, 503, 504}
                     or "RESOURCE_EXHAUSTED" in err_msg
                     or "UNAVAILABLE" in err_msg
                     or "NOT_FOUND" in err_msg
+                    or "DEADLINE_EXCEEDED" in err_msg
+                    or "timeout" in err_msg.lower()
                 )
                 log_event(
                     "model.request.failed",

@@ -106,8 +106,8 @@ def batch_summarize_emails(emails: list[Any], ai_service=None) -> dict[str, str]
     if not emails:
         return {}
 
-    # Target the top 15 emails to keep the single prompt compact and responsive
-    target_emails = emails[:15]
+    # Target the top 8 emails for fast LLM summarization (rest use clean extraction)
+    target_emails = emails[:8]
 
     try:
         if ai_service is None:
@@ -117,11 +117,11 @@ def batch_summarize_emails(emails: list[Any], ai_service=None) -> dict[str, str]
             service = ai_service
     except Exception as exc:
         logger.info("AI service unavailable for batch summary (%s); using in-memory extractor", exc)
-        return {e.id: extract_clean_summary(e.body) for e in target_emails}
+        return {e.id: extract_clean_summary(e.body) for e in emails}
 
     email_blocks = []
     for e in target_emails:
-        clean_text = extract_clean_summary(e.body, max_length=500) or e.subject
+        clean_text = extract_clean_summary(e.body, max_length=400) or e.subject
         email_blocks.append(f"[Email ID: {e.id}]\nSubject: {e.subject}\nSnippet: {clean_text}")
 
     prompt = (
@@ -132,21 +132,20 @@ def batch_summarize_emails(emails: list[Any], ai_service=None) -> dict[str, str]
     )
 
     try:
-        resp = service._generate_content(
-            "batch_email_summary",
-            prompt,
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": EmailBatchSummaryResponse,
-            },
+        from google.genai import types
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=EmailBatchSummaryResponse,
+            http_options=types.HttpOptions(timeout=4000),  # 4s max to keep UI super fast
         )
+        resp = service._generate_content("batch_email_summary", prompt, config=config)
         parsed = EmailBatchSummaryResponse.model_validate_json(resp.text)
         summaries = {item.id: item.summary.strip() for item in parsed.summaries if item.id and item.summary}
         # Fill any missing email IDs with the fast extractor
-        for e in target_emails:
+        for e in emails:
             if e.id not in summaries or not summaries[e.id]:
                 summaries[e.id] = extract_clean_summary(e.body)
         return summaries
     except Exception as exc:
-        logger.warning("Batched Gemini summarization failed (%s); falling back to in-memory extractor", exc)
-        return {e.id: extract_clean_summary(e.body) for e in target_emails}
+        logger.info("Batched Gemini summarization skipped or timed out (%s); using clean extractor", exc)
+        return {e.id: extract_clean_summary(e.body) for e in emails}

@@ -65,7 +65,8 @@ function App() {
       if (!response.ok) throw new Error(data.detail || "Could not check the Google connection.");
       setAuth(data);
     } catch (caught) {
-      setAuth({ connected: false });
+      // Don't disconnect if user was already connected during a transient network blip
+      setAuth((current) => (current?.connected ? current : { connected: false }));
       setAuthError(caught instanceof Error ? caught.message : "Could not reach BridgeAI.");
     } finally {
       setCheckingAuth(false);
@@ -132,6 +133,18 @@ function App() {
       const data = await response.json().catch(() => ({})) as Partial<ChatResponse>;
       if (!response.ok) throw new Error(data.detail || `The request failed (${response.status}).`);
       if (data.auth_required) {
+        // Attempt silent background refresh before kicking user out
+        try {
+          const refreshRes = await fetch("/auth/status", { cache: "no-store" });
+          const refreshData = await refreshRes.json().catch(() => ({})) as AuthStatus;
+          if (refreshData?.connected) {
+            setAuth(refreshData);
+            // Successfully refreshed silently; don't disrupt the user
+            return;
+          }
+        } catch {
+          // Ignore error and fall through
+        }
         setAuth({ connected: false });
         setAuthError("Your Google session has expired. Please connect your Google account to continue.");
         return;

@@ -104,6 +104,13 @@ class EmailAgentTools:
                 errno=getattr(root_cause, "errno", None),
             )
             if is_auth_error:
+                provider = self._resolve_provider(request_context)
+                if hasattr(provider, "refresh_and_reset"):
+                    try:
+                        provider.refresh_and_reset()
+                        return handler(parsed, request_context)
+                    except Exception:
+                        pass
                 return ToolOutcome({"error": "authorization_expired"})
             return ToolOutcome({"error": "The requested operation is temporarily unavailable. Please try again."})
 

@@ -173,9 +173,15 @@ class GoogleOAuthManager:
 
         token = token_data.get("token") or token_data.get("access_token")
         refresh_token = token_data.get("refresh_token")
-        client_id = token_data.get("client_id") or self.client_id
-        client_secret = token_data.get("client_secret") or self.client_secret
-        token_uri = token_data.get("token_uri") or "https://oauth2.googleapis.com/token"
+        client_config = {}
+        try:
+            client_config = self.get_client_config()
+        except Exception:
+            pass
+        client_info = client_config.get("web") or client_config.get("installed", {})
+        client_id = token_data.get("client_id") or client_info.get("client_id") or self.client_id
+        client_secret = token_data.get("client_secret") or client_info.get("client_secret") or self.client_secret
+        token_uri = token_data.get("token_uri") or client_info.get("token_uri") or "https://oauth2.googleapis.com/token"
         scopes = token_data.get("scopes") or self.scopes
         if isinstance(scopes, str):
             scopes = scopes.split(" ")
@@ -190,7 +196,7 @@ class GoogleOAuthManager:
             except Exception:
                 pass
 
-        return Credentials(
+        creds = Credentials(
             token=token,
             refresh_token=refresh_token,
             token_uri=token_uri,
@@ -199,6 +205,56 @@ class GoogleOAuthManager:
             scopes=scopes,
             expiry=expiry,
         )
+
+        # Proactively refresh token if not valid and refresh_token is present
+        if not creds.valid and creds.refresh_token:
+            from google.auth.transport.requests import Request
+            try:
+                creds.refresh(Request())
+                if isinstance(token_data, dict):
+                    token_data["token"] = creds.token
+                    if creds.expiry:
+                        token_data["expiry"] = creds.expiry.isoformat()
+            except Exception:
+                pass
+
+        return creds
+
+    def refresh_credentials(self):
+        """Force-refresh saved Google credentials and persist to token_path."""
+        with self._lock:
+            from google.auth.transport.requests import Request
+            from google.oauth2.credentials import Credentials
+
+            if not self.token_path.is_file():
+                raise GoogleOAuthError("No saved Google credentials to refresh.")
+            stored = json.loads(self.token_path.read_text(encoding="utf-8"))
+            refresh_token = stored.get("refresh_token")
+            if not refresh_token:
+                raise GoogleOAuthError("No refresh token available.")
+
+            client_config = {}
+            try:
+                client_config = self.get_client_config()
+            except Exception:
+                pass
+            client_info = client_config.get("web") or client_config.get("installed", {})
+            client_id = stored.get("client_id") or client_info.get("client_id") or self.client_id
+            client_secret = stored.get("client_secret") or client_info.get("client_secret") or self.client_secret
+            token_uri = stored.get("token_uri") or client_info.get("token_uri") or "https://oauth2.googleapis.com/token"
+
+            creds = Credentials(
+                token=stored.get("token"),
+                refresh_token=refresh_token,
+                token_uri=token_uri,
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=stored.get("scopes") or self.scopes,
+            )
+            creds.refresh(Request())
+            self._save_credentials(creds)
+            self._credentials = creds
+            return creds
 
     def credentials(self):
         if self._credentials and self._credentials.valid and self._credentials.has_scopes(self.scopes):
@@ -298,10 +354,10 @@ class GoogleOAuthManager:
             credentials = Credentials.from_authorized_user_file(str(self.token_path), self.scopes)
             if credentials.has_scopes(self.scopes) and credentials.valid:
                 return credentials
-            if credentials.expired and credentials.refresh_token:
+            if not credentials.valid and credentials.refresh_token:
                 try:
                     credentials.refresh(Request())
-                except RefreshError:
+                except Exception:
                     return None
                 self._save_credentials(credentials)
                 return credentials if credentials.valid and credentials.has_scopes(self.scopes) else None

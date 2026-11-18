@@ -29,15 +29,27 @@ def _decode_session_token(cookie_str: str) -> dict | None:
 def build_router(oauth_manager, email_provider):
     router = APIRouter(prefix="/auth", tags=["auth"])
 
-    def _resolve_session_provider(request: Request):
-        """Build provider from session cookie if present, else fallback to default provider."""
+    def _resolve_session_provider(request: Request, response: Response | None = None):
+        """Build provider from session cookie if present, auto-refreshing expired token if needed."""
         auth_cookie = request.cookies.get("bridgeai_session_token")
         if auth_cookie:
             token_data = _decode_session_token(auth_cookie)
             if token_data:
                 try:
+                    orig_token = token_data.get("token")
                     creds = oauth_manager.credentials_from_token(token_data)
-                    return GmailEmailProvider(service_factory=lambda: oauth_manager.service("gmail", "v1", creds=creds))
+                    # If token was refreshed, update the session cookie in response
+                    if response is not None and token_data.get("token") != orig_token:
+                        is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https" or "vercel.app" in str(request.base_url)
+                        response.set_cookie(
+                            key="bridgeai_session_token",
+                            value=_encode_session_token(token_data),
+                            httponly=True,
+                            samesite="lax",
+                            secure=is_https,
+                            max_age=30 * 86400,
+                        )
+                    return GmailEmailProvider(service_factory=lambda: oauth_manager.service("gmail", "v1", creds=creds), oauth_manager=oauth_manager)
                 except Exception:
                     pass
         return email_provider
@@ -50,15 +62,19 @@ def build_router(oauth_manager, email_provider):
         if auth_cookie:
             token_data = _decode_session_token(auth_cookie)
             if token_data:
+                cached_email = token_data.get("email")
                 try:
-                    session_provider = _resolve_session_provider(request)
+                    session_provider = _resolve_session_provider(request, response)
                     email_addr = session_provider.get_account_email()
                     return {"connected": True, "email": email_addr}
                 except (GoogleOAuthError, GmailProviderError, Exception):
-                    # If session token had a cached email or test fallback email_provider succeeds
+                    if cached_email:
+                        return {"connected": True, "email": cached_email}
                     try:
                         return {"connected": True, "email": email_provider.get_account_email()}
                     except Exception:
+                        if token_data.get("refresh_token"):
+                            return {"connected": True, "email": cached_email or None}
                         return {"connected": False, "email": None}
 
         # 2. Check local saved authorization (Local Desktop mode)
@@ -67,7 +83,19 @@ def build_router(oauth_manager, email_provider):
         try:
             return {"connected": True, "email": email_provider.get_account_email()}
         except (GoogleOAuthError, GmailProviderError, Exception):
-            return {"connected": False, "email": None}
+            try:
+                oauth_manager.refresh_credentials()
+                email_provider.reset_connection()
+                return {"connected": True, "email": email_provider.get_account_email()}
+            except Exception:
+                if oauth_manager.token_path.is_file():
+                    try:
+                        d = json.loads(oauth_manager.token_path.read_text(encoding="utf-8"))
+                        if d.get("refresh_token"):
+                            return {"connected": True, "email": d.get("account") or None}
+                    except Exception:
+                        pass
+                return {"connected": False, "email": None}
 
     @router.get("/login")
     def login(request: Request):
