@@ -52,6 +52,7 @@ def build_router(chat_service, email_provider, oauth_manager=None):
             response=result.get("response", "I couldn't complete that request."),
             current_email_id=result.get("current_email_id"),
             used_recent_window=result.get("used_recent_window", False),
+            auth_required=result.get("auth_required", False),
             email_options=[
                 {
                     "id": email.id,

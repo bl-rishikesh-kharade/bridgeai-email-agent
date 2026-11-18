@@ -50,24 +50,23 @@ def build_router(oauth_manager, email_provider):
         if auth_cookie:
             token_data = _decode_session_token(auth_cookie)
             if token_data:
-                cached_email = token_data.get("email")
-                if cached_email:
-                    return {"connected": True, "email": cached_email}
                 try:
                     session_provider = _resolve_session_provider(request)
-                    return {"connected": True, "email": session_provider.get_account_email()}
-                except Exception:
+                    email_addr = session_provider.get_account_email()
+                    return {"connected": True, "email": email_addr}
+                except (GoogleOAuthError, GmailProviderError, Exception):
+                    # If session token had a cached email or test fallback email_provider succeeds
                     try:
                         return {"connected": True, "email": email_provider.get_account_email()}
                     except Exception:
-                        return {"connected": True, "email": "Google User"}
+                        return {"connected": False, "email": None}
 
         # 2. Check local saved authorization (Local Desktop mode)
         if not oauth_manager.has_saved_authorization():
             return {"connected": False, "email": None}
         try:
             return {"connected": True, "email": email_provider.get_account_email()}
-        except (GoogleOAuthError, GmailProviderError):
+        except (GoogleOAuthError, GmailProviderError, Exception):
             return {"connected": False, "email": None}
 
     @router.get("/login")

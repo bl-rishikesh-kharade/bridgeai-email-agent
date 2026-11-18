@@ -19,6 +19,7 @@ type ChatResponse = {
   response: string;
   email_options?: ChatEmailOption[];
   used_recent_window?: boolean;
+  auth_required?: boolean;
   detail?: string;
 };
 type Message = {
@@ -130,6 +131,11 @@ function App() {
       });
       const data = await response.json().catch(() => ({})) as Partial<ChatResponse>;
       if (!response.ok) throw new Error(data.detail || `The request failed (${response.status}).`);
+      if (data.auth_required) {
+        setAuth({ connected: false });
+        setAuthError("Your Google session has expired. Please connect your Google account to continue.");
+        return;
+      }
       setUsedRecentWindow(data.used_recent_window ?? false);
       setMessages((current) => [...current, {
         id: crypto.randomUUID(), role: "assistant", text: data.response || "I couldn't complete that request.",

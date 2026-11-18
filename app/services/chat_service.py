@@ -233,10 +233,10 @@ class ChatService:
             outcome = self.toolset.execute(call.name, call.arguments, request_context)
             if "error" in outcome.data:
                 err = outcome.data.get("error", "")
-                if err == "authorization_expired":
+                auth_expired = (err == "authorization_expired")
+                if auth_expired:
                     error_msg = (
-                        "Your Google session has expired or requires re-authentication. "
-                        "Please click **Switch account** in the top right to reconnect your Google account."
+                        "Your Google session has expired. Redirecting you to connect your Google account..."
                     )
                 else:
                     error_msg = (
@@ -251,6 +251,7 @@ class ChatService:
                     "email_reviews": reviews,
                     "current_email_id": current_id,
                     "used_recent_window": used_recent_window,
+                    "auth_required": auth_expired,
                 }
             count += 1
             used_recent_window = used_recent_window or outcome.used_recent_window

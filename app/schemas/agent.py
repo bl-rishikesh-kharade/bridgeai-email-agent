@@ -40,3 +40,4 @@ class AgentChatResponse(BaseModel):
     current_email_id: str | None = None
     email_options: list[ChatEmailOption] = Field(default_factory=list)
     used_recent_window: bool = False
+    auth_required: bool = False
