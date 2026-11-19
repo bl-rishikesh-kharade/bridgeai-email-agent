@@ -18,7 +18,7 @@ SIGNATURE_REGEX = re.compile(
     re.IGNORECASE,
 )
 BOILERPLATE_REGEX = re.compile(
-    r"^(?:this\s+email|caution:|disclaimer:|note:|view\s+(?:in|this)|click\s+here|unsubscribe|copyright|\*+)\b",
+    r"^(?:this\s+email|caution:|disclaimer:|note:|view\s+(?:in|this|page)|click\s+here|unsubscribe|copyright|\*+)\b",
     re.IGNORECASE,
 )
 URL_REGEX = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
@@ -34,7 +34,7 @@ GENERIC_WRAPPER_SENTENCE_REGEX = re.compile(
     re.IGNORECASE,
 )
 GENERIC_PASSIVE_TAIL_REGEX = re.compile(
-    r"\s+has\s+been\s+(?:shared\s+with\s+you|shared|published|posted|assigned\s+to\s+you|issued|created|released)(?:\s+on\s+the\s+portal)?(?:[.\s]*)$",
+    r"\s+has\s+been\s+(?:shared\s+with\s+you|shared|published|posted|assigned\s+to\s+you|issued|created|released)(?:\s+(?:on|through)\s+[^.]+)?(?:[.\s]*)$",
     re.IGNORECASE,
 )
 
@@ -60,7 +60,7 @@ def _tokenize_words(text: str) -> list[str]:
 
 
 def _clean_body_text(body: str | None) -> list[str]:
-    """Stage 1: Strip HTML, styling, greetings, signatures and extract raw sentence lines."""
+    """Stage 1: Strip HTML, styling, greetings, signatures and join paragraph flow cleanly."""
     if not body:
         return []
 
@@ -68,7 +68,7 @@ def _clean_body_text(body: str | None) -> list[str]:
     text = re.sub(r"(?is)<(style|script|head)[^>]*>.*?</\1>", " ", body)
     text = re.sub(r"(?s)<!--.*?-->", " ", text)
     # Strip HTML tags
-    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"<[^>]+>", "\n", text)
     # Unescape HTML entities (&amp; -> &, &#39; -> ', &nbsp; -> ' ')
     text = html.unescape(text)
     # Remove CSS declarations and rules (.class { ... }, etc.)
@@ -78,11 +78,16 @@ def _clean_body_text(body: str | None) -> list[str]:
     # Remove raw URLs
     text = URL_REGEX.sub("", text)
 
+    # Reconstruct continuous paragraphs while respecting empty lines as paragraph breaks
     lines = [line.strip() for line in text.splitlines()]
-    sentences: list[str] = []
+    paragraphs: list[str] = []
+    current_para: list[str] = []
 
     for line in lines:
         if not line:
+            if current_para:
+                paragraphs.append(" ".join(current_para))
+                current_para = []
             continue
         if EMAIL_HEADER_REGEX.match(line):
             continue
@@ -91,12 +96,26 @@ def _clean_body_text(body: str | None) -> list[str]:
             continue
         if SIGNATURE_REGEX.match(cleaned_line) or BOILERPLATE_REGEX.match(cleaned_line):
             break
+        current_para.append(cleaned_line)
 
-        # Split into distinct sentences by punctuation
-        raw_sentences = re.split(r"(?<=[.!?])\s+", cleaned_line)
-        for s in raw_sentences:
-            s_clean = s.strip()
-            if len(s_clean) < 8 or re.match(r"^[-=_*~#]{2,}$", s_clean):
+    if current_para:
+        paragraphs.append(" ".join(current_para))
+
+    # Now extract complete sentences from continuous paragraphs
+    sentences: list[str] = []
+    for para in paragraphs:
+        # Strip raw calendar artifacts or invitation URL links
+        para = re.sub(r"(?i)//\s*invitation\s+from\s+google\s+calendar:\s*https?://\S*", "Invitation received from Google Calendar.", para)
+        # Avoid splitting on abbreviations like 'Sem.' or 'Dr.' or 'Prof.' or 'St.' or 'Mr.'
+        para = re.sub(r"\b(Sem|Dr|Prof|Mr|Ms|Mrs|St|approx|dept|e\.g|i\.e)\.\s+", r"\1_DOT_ ", para, flags=re.IGNORECASE)
+        raw_sents = re.split(r"(?<=[.!?])\s+", para)
+        for s in raw_sents:
+            s_clean = s.replace("_DOT_", ".").strip()
+            # Clean Markdown formatting like *mandatory* or _italic_
+            s_clean = re.sub(r"[*_~`]", "", s_clean)
+            words = s_clean.split()
+            # Filter out non-sentences: logo text, single header words, buttons
+            if len(words) < 4:
                 continue
             if SIGNATURE_REGEX.match(s_clean) or BOILERPLATE_REGEX.match(s_clean):
                 break
@@ -113,12 +132,16 @@ def _clean_notification_wrapper(sentence: str, subject: str | None = None) -> st
     s = GENERIC_NOTIFICATION_PREFIX_REGEX.sub("", s).strip()
 
     # 2. Check for wrapper sentences like "A new circular with title [Subject] has been shared with you."
+    s = re.sub(r"^(?:A\s+new\s+(?:circular|notice|announcement|ticket|issue|update|message|task)\s+)?with\s+title\s+", "", s, flags=re.IGNORECASE).strip()
     if GENERIC_WRAPPER_SENTENCE_REGEX.match(s):
         s_unwrapped = GENERIC_WRAPPER_SENTENCE_REGEX.sub("", s).strip()
-        # Strip passive trailing phrase: "has been shared with you on the portal." -> "has been shared."
-        s_unwrapped = GENERIC_PASSIVE_TAIL_REGEX.sub(".", s_unwrapped).strip()
-        if len(s_unwrapped) > 10:
+        s_unwrapped = re.sub(r"^with\s+title\s+", "", s_unwrapped, flags=re.IGNORECASE).strip()
+        if len(s_unwrapped.split()) >= 3:
             s = s_unwrapped
+
+    # 3. Strip calendar invitation prefix boilerplate: // Invitation from Google Calendar...
+    if "invitation from google calendar" in s.lower():
+        s = "Google Calendar event invitation received."
 
     # Clean up any leftover duplicate punctuation or double spaces
     s = re.sub(r"\s+", " ", s).strip()
@@ -141,7 +164,7 @@ def _rank_sentences_lexrank(sentences: list[str]) -> str:
     if not any(sentence_vectors):
         return sentences[0]
 
-    # Calculate Cosine / Jaccard similarity matrix
+    # Calculate Cosine similarity matrix
     similarity_scores = [0.0] * n
     for i in range(n):
         words_i = Counter(sentence_vectors[i])
@@ -186,7 +209,7 @@ def extract_clean_summary(body: str | None, max_length: int = 250, subject: str 
 
     # Clean universal notification wrappers from candidate sentences
     cleaned_sentences = [_clean_notification_wrapper(s, subject) for s in raw_sentences]
-    cleaned_sentences = [s for s in cleaned_sentences if len(s) >= 12]
+    cleaned_sentences = [s for s in cleaned_sentences if len(s.split()) >= 4]
 
     if not cleaned_sentences:
         cleaned_sentences = raw_sentences

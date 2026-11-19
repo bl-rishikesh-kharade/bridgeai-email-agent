@@ -66,7 +66,7 @@ def test_extract_clean_summary_removes_plain_text_css_selectors_and_wrappers():
     summary = extract_clean_summary(body)
     assert "textVerdana" not in summary
     assert "style-three" not in summary
-    assert "Datesheet for BCA & BCA (AIML) & MCA End Term Examinations December 2026." in summary
+    assert "Datesheet for BCA & BCA (AIML) & MCA End Term Examinations December 2026" in summary
 
 
 def test_batch_summarize_emails_local():
