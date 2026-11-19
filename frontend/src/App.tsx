@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
-import { ArrowUp, LoaderCircle, LogOut, Mail, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowUp, Check, LoaderCircle, LogOut, Mail, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 import Markdown from "react-markdown";
 
 type AuthStatus = { connected: boolean; email?: string | null; detail?: string; redirect?: string };
@@ -44,7 +44,65 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [usedRecentWindow, setUsedRecentWindow] = useState(false);
+  const [selectedEmailIds, setSelectedEmailIds] = useState<Set<string>>(new Set());
+  const [markedReadIds, setMarkedReadIds] = useState<Set<string>>(new Set());
+  const [markingRead, setMarkingRead] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  function toggleSelectEmail(id: string) {
+    setSelectedEmailIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAll(options: ChatEmailOption[]) {
+    const unreadOptions = options.filter((e) => !markedReadIds.has(e.id));
+    const allSelected = unreadOptions.every((e) => selectedEmailIds.has(e.id));
+    setSelectedEmailIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        unreadOptions.forEach((e) => next.delete(e.id));
+      } else {
+        unreadOptions.forEach((e) => next.add(e.id));
+      }
+      return next;
+    });
+  }
+
+  async function handleMarkSelectedAsRead(idsToMark: string[]) {
+    if (idsToMark.length === 0 || markingRead) return;
+    setMarkingRead(true);
+    try {
+      const response = await fetch("/agent/emails/mark-read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email_ids: idsToMark }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.success) {
+        setMarkedReadIds((prev) => {
+          const next = new Set(prev);
+          idsToMark.forEach((id) => next.add(id));
+          return next;
+        });
+        setSelectedEmailIds((prev) => {
+          const next = new Set(prev);
+          idsToMark.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+    } catch (err) {
+      console.error("Failed to mark emails as read", err);
+    } finally {
+      setMarkingRead(false);
+    }
+  }
 
   useEffect(() => {
     void checkAuth();
@@ -268,29 +326,99 @@ function App() {
                         )}
                       </div>
                       {message.role === "assistant" && message.emailOptions?.length ? (
-                        <div className="email-options" aria-label="Matching emails">
-                          {message.emailOptions.map((email) => (
-                            <article className="email-option" key={email.id}>
-                              <div className="email-option-copy">
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                                  {email.priority && (
-                                    <span className={`priority-badge priority-${email.priority.toLowerCase()}`}>
-                                      {email.priority}
-                                    </span>
+                        <div className="email-options-container" aria-label="Matching emails">
+                          {(() => {
+                            const unreadList = message.emailOptions.filter((e) => !markedReadIds.has(e.id));
+                            const selectedCount = unreadList.filter((e) => selectedEmailIds.has(e.id)).length;
+                            const isAllSelected = unreadList.length > 0 && selectedCount === unreadList.length;
+
+                            return (
+                              <div className="email-list-toolbar">
+                                <label className="select-all-label">
+                                  <input
+                                    type="checkbox"
+                                    className="custom-checkbox"
+                                    checked={isAllSelected}
+                                    disabled={unreadList.length === 0}
+                                    onChange={() => toggleSelectAll(message.emailOptions!)}
+                                  />
+                                  <span>Select all ({unreadList.length})</span>
+                                </label>
+                                <button
+                                  type="button"
+                                  className={`mark-read-button ${selectedCount > 0 ? "active" : ""}`}
+                                  disabled={selectedCount === 0 || markingRead}
+                                  onClick={() => {
+                                    const idsToMark = unreadList
+                                      .filter((e) => selectedEmailIds.has(e.id))
+                                      .map((e) => e.id);
+                                    void handleMarkSelectedAsRead(idsToMark);
+                                  }}
+                                >
+                                  {markingRead ? (
+                                    <>
+                                      <LoaderCircle size={14} className="spin" />
+                                      <span>Marking…</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Check size={14} />
+                                      <span>{selectedCount > 0 ? `Mark as read (${selectedCount})` : "Mark as read"}</span>
+                                    </>
                                   )}
-                                  <strong>{email.subject || "(No subject)"}</strong>
-                                </div>
-                                <span>
-                                  {email.sender}
-                                  {email.received_at ? ` · ${new Date(email.received_at).toLocaleString()}` : ""}
-                                </span>
-                                {email.summary ? (
-                                  <p className="email-option-summary">{email.summary}</p>
-                                ) : null}
+                                </button>
                               </div>
-                              {email.gmail_url && <a className="email-view-link" href={email.gmail_url} target="_blank" rel="noopener noreferrer">View in Gmail</a>}
-                            </article>
-                          ))}
+                            );
+                          })()}
+
+                          <div className="email-options">
+                            {message.emailOptions.map((email) => {
+                              const isMarked = markedReadIds.has(email.id);
+                              const isChecked = selectedEmailIds.has(email.id);
+
+                              return (
+                                <article className={`email-option ${isMarked ? "is-read-marked" : ""}`} key={email.id}>
+                                  <div className="email-option-left">
+                                    <input
+                                      type="checkbox"
+                                      className="custom-checkbox email-card-checkbox"
+                                      checked={isChecked}
+                                      disabled={isMarked}
+                                      onChange={() => toggleSelectEmail(email.id)}
+                                      aria-label={`Select ${email.subject}`}
+                                    />
+                                  </div>
+                                  <div className="email-option-copy">
+                                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                                      {email.priority && (
+                                        <span className={`priority-badge priority-${email.priority.toLowerCase()}`}>
+                                          {email.priority}
+                                        </span>
+                                      )}
+                                      <strong>{email.subject || "(No subject)"}</strong>
+                                      {isMarked && (
+                                        <span className="marked-read-badge">
+                                          <Check size={11} /> Read in Gmail
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span>
+                                      {email.sender}
+                                      {email.received_at ? ` · ${new Date(email.received_at).toLocaleString()}` : ""}
+                                    </span>
+                                    {email.summary ? (
+                                      <p className="email-option-summary">{email.summary}</p>
+                                    ) : null}
+                                  </div>
+                                  {email.gmail_url && (
+                                    <a className="email-view-link" href={email.gmail_url} target="_blank" rel="noopener noreferrer">
+                                      View in Gmail
+                                    </a>
+                                  )}
+                                </article>
+                              );
+                            })}
+                          </div>
                         </div>
                       ) : null}
                       <time className="message-time" dateTime={message.time.toISOString()}>{message.time.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</time>

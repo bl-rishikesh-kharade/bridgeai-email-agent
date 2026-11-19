@@ -301,3 +301,30 @@ class GmailEmailProvider:
         has_operator = any(op in clean_query.lower() for op in operators)
         gmail_query = f'from:"{clean_query}"' if sender_only else (clean_query if has_operator else f'"{clean_query}"')
         return self.list_emails(limit, query=gmail_query)
+
+    def mark_as_read(self, email_ids: list[str], *, _retry: bool = True) -> int:
+        """Remove UNREAD label from the specified emails in Gmail."""
+        if not email_ids:
+            return 0
+        clean_ids = [str(eid).strip() for eid in email_ids if str(eid).strip()]
+        if not clean_ids:
+            return 0
+        try:
+            # Gmail batchModify handles up to 1000 IDs per request
+            self._gmail.users().messages().batchModify(
+                userId="me",
+                body={
+                    "ids": clean_ids,
+                    "removeLabelIds": ["UNREAD"],
+                },
+            ).execute()
+            return len(clean_ids)
+        except GmailProviderError:
+            raise
+        except Exception as exc:
+            if getattr(exc, "resp", None) is not None and getattr(exc.resp, "status", None) in {401, 403}:
+                if _retry and self._oauth_manager:
+                    self.refresh_and_reset()
+                    return self.mark_as_read(clean_ids, _retry=False)
+                raise GmailAuthorizationError("Gmail access is denied; check modified permissions.") from exc
+            raise GmailProviderError("Failed to mark emails as read.") from exc

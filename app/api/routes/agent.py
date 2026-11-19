@@ -1,7 +1,7 @@
 import json
 from fastapi import APIRouter, Request
 
-from app.schemas.agent import AgentChatRequest, AgentChatResponse
+from app.schemas.agent import AgentChatRequest, AgentChatResponse, MarkEmailsReadRequest, MarkEmailsReadResponse
 from app.integrations.email.gmail_provider import GmailEmailProvider
 from app.services.email_summary import batch_summarize_emails, extract_clean_summary
 
@@ -84,5 +84,16 @@ def build_router(chat_service, email_provider, oauth_manager=None):
                 auth_required=False,
                 email_options=[],
             )
+
+    @router.post("/emails/mark-read", response_model=MarkEmailsReadResponse)
+    def mark_emails_read(request: MarkEmailsReadRequest, http_request: Request):
+        active_provider = _resolve_request_provider(http_request)
+        try:
+            count = active_provider.mark_as_read(request.email_ids)
+            return MarkEmailsReadResponse(success=True, marked_count=count, marked_ids=request.email_ids)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception("Failed to mark emails as read: %s", exc)
+            return MarkEmailsReadResponse(success=False, marked_count=0, marked_ids=[])
 
     return router

@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     google_client_secret: str | None = None
     google_redirect_uri: str | None = None
     oauth_scopes: list[str] = [
-        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.modify",
     ]
 
     # Timeouts (seconds)

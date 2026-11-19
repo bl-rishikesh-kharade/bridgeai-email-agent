@@ -41,3 +41,13 @@ class AgentChatResponse(BaseModel):
     email_options: list[ChatEmailOption] = Field(default_factory=list)
     used_recent_window: bool = False
     auth_required: bool = False
+
+
+class MarkEmailsReadRequest(BaseModel):
+    email_ids: list[str] = Field(min_length=1, max_length=500)
+
+
+class MarkEmailsReadResponse(BaseModel):
+    success: bool
+    marked_count: int
+    marked_ids: list[str] = Field(default_factory=list)

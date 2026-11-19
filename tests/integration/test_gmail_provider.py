@@ -49,6 +49,10 @@ class Messages:
     def get(self, userId, id, format):
         return self.gets.get(id, Request(error=NotFound()))
 
+    def batchModify(self, userId, body):
+        self.last_batch_modify = body
+        return Request({"success": True})
+
 
 class NotFound(Exception):
     class Response:
@@ -151,8 +155,9 @@ def test_rejects_malformed_messages_and_exposes_no_email_write_operations():
     with pytest.raises(GmailProviderError):
         GmailEmailProvider.map_message({})
     provider = GmailEmailProvider(Service(Messages()))
-    assert not hasattr(provider, "mark_as_read")
+    assert not hasattr(provider, "send_email")
     assert not hasattr(provider, "create_email")
+    assert not hasattr(provider, "delete_email")
 
 
 def test_provider_errors_are_sanitized():
@@ -227,3 +232,14 @@ def test_list_emails_skips_corrupted_message_and_returns_valid_messages():
     emails = provider.list_emails(2)
     assert len(emails) == 1
     assert emails[0].id == "good"
+
+
+def test_mark_as_read_executes_batch_modify():
+    messages = Messages()
+    provider = GmailEmailProvider(Service(messages))
+    count = provider.mark_as_read(["msg-1", "msg-2"])
+    assert count == 2
+    assert messages.last_batch_modify == {
+        "ids": ["msg-1", "msg-2"],
+        "removeLabelIds": ["UNREAD"],
+    }
