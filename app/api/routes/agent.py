@@ -45,7 +45,7 @@ def build_router(chat_service, email_provider, oauth_manager=None):
                 for review in result.get("email_reviews", [])
                 if review.get("email_id")
             }
-            # Run batched Gemini summarization on unreviewed emails in a single request (with 4s timeout fallback)
+            # Run fast, pure local 4-stage summarization across all emails (0 API calls/tokens)
             unreviewed = [e for e in email_results if not reviews_by_email_id.get(e.id, {}).get("summary")]
             batch_summaries = batch_summarize_emails(unreviewed) if unreviewed else {}
 

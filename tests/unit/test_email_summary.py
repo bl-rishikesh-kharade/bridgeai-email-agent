@@ -33,8 +33,8 @@ def test_extract_clean_summary_truncates_long_body_cleanly():
         "covering all primary servers, secondary backup nodes, and related database clusters throughout the weekend."
     )
     summary = extract_clean_summary(body, max_length=60)
-    assert len(summary) <= 63  # 60 + "..."
-    assert summary.endswith("...")
+    assert len(summary) <= 61  # Complete sentence ending with period
+    assert summary.endswith(".")
     assert not summary.endswith(" ...")
 
 
@@ -55,51 +55,32 @@ def test_extract_clean_summary_removes_css_and_style_tags():
     assert "display: block" not in summary
     assert "textVerdana" not in summary
     assert "font-size" not in summary
-    assert "New circular regarding Seating Plan for Numerical Aptitude test in Block 3 on 17/11/2026." in summary
+    assert "Seating Plan for Numerical Aptitude test in Block 3 on 17/11/2026." in summary
 
 
-def test_extract_clean_summary_removes_plain_text_css_selectors():
+def test_extract_clean_summary_removes_plain_text_css_selectors_and_wrappers():
     body = (
         ".textVerdana12 .textVerdana14 hr.style-three "
-        "Chitkara University NEW CIRCULAR A new circular with title Seating Plan | Numerical Aptitude & Logical Reasoning - I has been shared."
+        "Chitkara University NEW CIRCULAR A new circular with title Datesheet for BCA &amp; BCA (AIML) & MCA End Term Examinations December 2026 has been shared with you."
     )
     summary = extract_clean_summary(body)
     assert "textVerdana" not in summary
     assert "style-three" not in summary
-    assert "Chitkara University NEW CIRCULAR A new circular with title Seating Plan" in summary
+    assert "Datesheet for BCA & BCA (AIML) & MCA End Term Examinations December 2026." in summary
 
 
-def test_batch_summarize_emails_with_mock_ai():
+def test_batch_summarize_emails_local():
     from app.services.email_summary import batch_summarize_emails
     from app.schemas.email import Email
-
-    class FakeAIService:
-        def _generate_content(self, operation, prompt, config=None):
-            return type("FakeResp", (), {
-                "text": '{"summaries": [{"id": "e-1", "summary": "Seating plan published for Batch 2024 exam."}]}'
-            })()
 
     emails = [
         Email(id="e-1", provider_message_id="p-1", sender="admin@chitkara.edu.in",
               receiver="me@example.com", subject="Seating plan",
-              body="Dear student, the exam will be held in Block 3.")
-    ]
-    results = batch_summarize_emails(emails, ai_service=FakeAIService())
-    assert results["e-1"] == "Seating plan published for Batch 2024 exam."
-
-
-def test_batch_summarize_emails_fallback_on_failure():
-    from app.services.email_summary import batch_summarize_emails
-    from app.schemas.email import Email
-
-    class BrokenAIService:
-        def _generate_content(self, *args, **kwargs):
-            raise RuntimeError("API quota reached")
-
-    emails = [
+              body="Dear student, the exam will be held in Block 3. Best regards, Exam Cell."),
         Email(id="e-2", provider_message_id="p-2", sender="hr@company.com",
               receiver="me@example.com", subject="Offer letter",
-              body="Hello Karthik, Please find the attached employment contract.")
+              body="Hello Karthik, Please find the attached employment contract for Senior Engineer."),
     ]
-    results = batch_summarize_emails(emails, ai_service=BrokenAIService())
-    assert "Please find the attached employment contract." in results["e-2"]
+    results = batch_summarize_emails(emails)
+    assert "the exam will be held in Block 3." in results["e-1"]
+    assert "Please find the attached employment contract" in results["e-2"]
