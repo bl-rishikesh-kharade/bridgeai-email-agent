@@ -84,3 +84,33 @@ def test_batch_summarize_emails_local():
     results = batch_summarize_emails(emails)
     assert "the exam will be held in Block 3." in results["e-1"]
     assert "Please find the attached employment contract" in results["e-2"]
+
+
+def test_extract_meeting_url():
+    from app.services.email_summary import extract_meeting_url
+
+    # Google Meet standard link
+    body_meet = "Join with Google Meet: https://meet.google.com/khm-dvdj-xnc or phone: +1 123-456-7890"
+    assert extract_meeting_url(body_meet) == "https://meet.google.com/khm-dvdj-xnc"
+
+    # Google Meet tel.meet code redirect
+    body_tel = "Join with Google Meet https://tel.meet/wbo-zssr-vtz?hs=224"
+    assert extract_meeting_url(body_tel) == "https://meet.google.com/wbo-zssr-vtz"
+
+    # Zoom meeting link
+    body_zoom = "Please join the sync meeting at https://us02web.zoom.us/j/8492019481?pwd=abc"
+    assert "https://us02web.zoom.us/j/8492019481?pwd=abc" == extract_meeting_url(body_zoom)
+
+    # Regular non-meeting email
+    assert extract_meeting_url("Just checking in on the project update.") is None
+
+
+def test_extract_clean_summary_meeting_invite():
+    body = (
+        "Sync up call with the engineering team to discuss quarterly deliverables.\n"
+        "Join with Google Meet https://tel.meet/khm-dvdj-xnc?hs=224\n"
+        "Looking forward to seeing you all."
+    )
+    summary = extract_clean_summary(body)
+    assert "https:// /" not in summary
+    assert "Join via Google Meet." in summary or "Sync up call" in summary

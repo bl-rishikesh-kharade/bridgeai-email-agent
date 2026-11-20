@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request
 
 from app.schemas.agent import AgentChatRequest, AgentChatResponse, MarkEmailsReadRequest, MarkEmailsReadResponse
 from app.integrations.email.gmail_provider import GmailEmailProvider
-from app.services.email_summary import batch_summarize_emails, extract_clean_summary
+from app.services.email_summary import batch_summarize_emails, extract_clean_summary, extract_meeting_url
 
 
 def build_router(chat_service, email_provider, oauth_manager=None):
@@ -58,6 +58,7 @@ def build_router(chat_service, email_provider, oauth_manager=None):
                     {
                         "id": email.id,
                         "gmail_url": active_provider.gmail_url(email),
+                        "meeting_url": extract_meeting_url(email.body),
                         "subject": email.subject,
                         "sender": str(email.sender),
                         "receiver": str(email.receiver),

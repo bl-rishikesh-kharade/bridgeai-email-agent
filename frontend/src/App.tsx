@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
-import { ArrowUp, Check, LoaderCircle, LogOut, Mail, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowUp, Check, LoaderCircle, LogOut, Mail, RefreshCw, ShieldCheck, Sparkles, Video } from "lucide-react";
 import Markdown from "react-markdown";
 
 type AuthStatus = { connected: boolean; email?: string | null; detail?: string; redirect?: string };
 type ChatEmailOption = {
   id: string;
   gmail_url?: string | null;
+  meeting_url?: string | null;
   subject: string;
   sender: string;
   receiver?: string | null;
@@ -31,6 +32,27 @@ type Message = {
 };
 
 const IMPORTANT_PROMPT = "Show my unread important emails";
+
+function renderLinkifiedText(text: string) {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  return parts.map((part, index) => {
+    if (part.match(urlRegex)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="email-inline-link"
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+}
 
 function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
@@ -404,14 +426,28 @@ function App() {
                                       {email.received_at ? ` · ${new Date(email.received_at).toLocaleString()}` : ""}
                                     </span>
                                     {email.summary ? (
-                                      <p className="email-option-summary">{email.summary}</p>
+                                      <p className="email-option-summary">{renderLinkifiedText(email.summary)}</p>
                                     ) : null}
                                   </div>
-                                  {email.gmail_url && (
-                                    <a className="email-view-link" href={email.gmail_url} target="_blank" rel="noopener noreferrer">
-                                      View in Gmail
-                                    </a>
-                                  )}
+                                  <div className="email-option-actions-right">
+                                    {email.meeting_url && (
+                                      <a
+                                        className="email-action-link email-join-link"
+                                        href={email.meeting_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title="Join video call directly"
+                                      >
+                                        <Video size={13} />
+                                        <span>Join Meeting</span>
+                                      </a>
+                                    )}
+                                    {email.gmail_url && (
+                                      <a className="email-action-link email-view-link" href={email.gmail_url} target="_blank" rel="noopener noreferrer">
+                                        View in Gmail
+                                      </a>
+                                    )}
+                                  </div>
                                 </article>
                               );
                             })}

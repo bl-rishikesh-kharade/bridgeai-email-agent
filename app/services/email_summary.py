@@ -59,6 +59,42 @@ def _tokenize_words(text: str) -> list[str]:
     return [w for w in words if w not in STOP_WORDS]
 
 
+def extract_meeting_url(text: str | None) -> str | None:
+    """Extract direct video meeting URL (Google Meet, Zoom, Teams, Webex) from text."""
+    if not text:
+        return None
+
+    # 1. Google Meet standard: https://meet.google.com/xxx-xxxx-xxx
+    meet_match = re.search(r"https?://meet\.google\.com/([a-z]{3}-[a-z]{4}-[a-z]{3})\b", text, re.IGNORECASE)
+    if meet_match:
+        return f"https://meet.google.com/{meet_match.group(1).lower()}"
+
+    # 2. Google Meet tel / direct code alias: https://tel.meet/xxx-xxxx-xxx
+    tel_meet = re.search(r"https?://tel\.meet/([a-z0-9_-]+)", text, re.IGNORECASE)
+    if tel_meet:
+        code = tel_meet.group(1).split("?")[0]
+        if re.match(r"^[a-z]{3}-[a-z]{4}-[a-z]{3}$", code, re.IGNORECASE):
+            return f"https://meet.google.com/{code.lower()}"
+        return f"https://tel.meet/{code}"
+
+    # 3. Zoom meeting: https://subdomain.zoom.us/j/... or /my/...
+    zoom_match = re.search(r"https?://(?:[a-zA-Z0-9-]+\.)?zoom\.us/(?:j|my)/[a-zA-Z0-9?=&%_.-]+", text, re.IGNORECASE)
+    if zoom_match:
+        return zoom_match.group(0).rstrip(".,)>\"'")
+
+    # 4. Microsoft Teams: https://teams.microsoft.com/l/meetup-join/...
+    teams_match = re.search(r"https?://(?:teams\.microsoft\.com/l/meetup-join|teams\.live\.com/meet)/[^\s\"'<>]+", text, re.IGNORECASE)
+    if teams_match:
+        return teams_match.group(0).rstrip(".,)>\"'")
+
+    # 5. Cisco Webex: https://company.webex.com/meet/...
+    webex_match = re.search(r"https?://[a-zA-Z0-9-]+\.webex\.com/(?:meet|join)/[^\s\"'<>]+", text, re.IGNORECASE)
+    if webex_match:
+        return webex_match.group(0).rstrip(".,)>\"'")
+
+    return None
+
+
 def _clean_body_text(body: str | None) -> list[str]:
     """Stage 1: Strip HTML, styling, greetings, signatures and join paragraph flow cleanly."""
     if not body:
@@ -74,7 +110,11 @@ def _clean_body_text(body: str | None) -> list[str]:
     # Remove CSS declarations and rules (.class { ... }, etc.)
     text = re.sub(r"(?s)[^{};<>\n]*\{[^}]*\}", " ", text)
     text = re.sub(r"(?i)\b[a-z-]+\s*:\s*[^;:<\n]+;", " ", text)
-    text = re.sub(r"(?:\.[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+|#[a-zA-Z0-9_-]+)", " ", text)
+    text = re.sub(r"(?:^|\s)(?:[.#][a-zA-Z0-9_-]+|\b[a-z]{1,6}\.[a-zA-Z0-9_-]+)(?=\s|$)", " ", text)
+    # Clean broken URL fragments like https:// /...
+    text = re.sub(r"https?://\s+/\S*", " ", text)
+    # Clean meeting boilerplate lines
+    text = re.sub(r"(?i)join\s+with\s+google\s+meet(?:\s*https?://\S*)?", "Join via Google Meet.", text)
     # Remove raw URLs
     text = URL_REGEX.sub("", text)
 

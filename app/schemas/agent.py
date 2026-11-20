@@ -23,6 +23,7 @@ class AgentChatRequest(BaseModel):
 class ChatEmailOption(BaseModel):
     id: str = Field(max_length=256)
     gmail_url: str | None = None
+    meeting_url: str | None = None
     subject: str = Field(max_length=1000)
     sender: str = Field(max_length=320)
     receiver: str | None = Field(default=None, max_length=320)
