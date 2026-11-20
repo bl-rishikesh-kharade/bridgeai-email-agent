@@ -62,16 +62,20 @@ class NotFound(Exception):
 
 
 class Users:
-    def __init__(self, messages):
+    def __init__(self, messages, profile=None):
         self._messages = messages
+        self._profile = profile
 
     def messages(self):
         return self._messages
 
+    def getProfile(self, userId="me"):
+        return Request(self._profile or {})
+
 
 class Service:
-    def __init__(self, messages):
-        self._users = Users(messages)
+    def __init__(self, messages, profile=None):
+        self._users = Users(messages, profile=profile)
 
     def users(self):
         return self._users
@@ -217,6 +221,15 @@ def test_gmail_url_fallback_when_account_lookup_fails():
     email = GmailEmailProvider.map_message(message("fallback-123"))
     url = provider.gmail_url(email)
     assert url == "https://mail.google.com/mail/#all/fallback-123"
+
+
+def test_gmail_url_with_account_preserves_email_at_symbol():
+    service = Service(Messages(), profile={"emailAddress": "rishikesh.kharade@bridgelabz.com"})
+    provider = GmailEmailProvider(service)
+    email = GmailEmailProvider.map_message(message("thread-456"))
+    url = provider.gmail_url(email)
+    assert url == "https://mail.google.com/mail/u/rishikesh.kharade@bridgelabz.com/#all/thread-456"
+    assert "%40" not in url
 
 
 def test_list_emails_skips_corrupted_message_and_returns_valid_messages():

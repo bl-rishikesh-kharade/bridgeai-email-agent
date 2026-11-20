@@ -286,7 +286,7 @@ class GmailEmailProvider:
         try:
             account = self.get_account_email()
             if account:
-                return f"https://mail.google.com/mail/u/{quote(account, safe='')}/#all/{quote(thread_id, safe='')}"
+                return f"https://mail.google.com/mail/u/{quote(account, safe='@+')}/#all/{quote(thread_id, safe='')}"
             return f"https://mail.google.com/mail/#all/{quote(thread_id, safe='')}"
         except Exception:
             return f"https://mail.google.com/mail/#all/{quote(thread_id, safe='')}"
