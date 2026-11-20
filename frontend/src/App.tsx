@@ -305,7 +305,7 @@ function App() {
               <div className="empty-state">
                 <div className="empty-icon"><Sparkles size={24} /></div>
                 <h3>Your email assistant is ready</h3>
-                <p>Ask BridgeAI anything about your emails, or select <strong>Unread important</strong> to catch up on critical messages that need action.</p>
+                <p>Ask BridgeAI anything about your inbox, or select <strong>Unread important</strong> to see the emails that need your attention.</p>
               </div>
             ) : (
               <div className="message-list">
