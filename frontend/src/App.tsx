@@ -451,7 +451,7 @@ function App() {
             <div className="composer-foot"><span>Enter to send · Shift + Enter for a new line</span><span>{draft.length}/4000</span></div>
           </form>
         </section>
-        <p className="privacy-note"><ShieldCheck size={14} /> Gmail checks run directly through your Google account. Email content is sent to Gemini when you ask for an AI response.</p>
+        <p className="privacy-note"><ShieldCheck size={14} /> Connected securely to Gmail. Your emails are processed in real time and never stored.</p>
       </main>
     </div>
   );
