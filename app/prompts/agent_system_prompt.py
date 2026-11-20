@@ -1,9 +1,58 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
-def build_agent_system_prompt(*, current_email_id: str | None, selected_email_id: str | None) -> str:
-    now = datetime.now(timezone.utc)
+def compute_temporal_context(now: datetime | None = None) -> tuple[str, str, str, str, str, str, str]:
+    if now is None:
+        now = datetime.now(timezone.utc)
     current_date_str = now.strftime("%A, %B %d, %Y")
+    today_ymd = now.strftime("%Y/%m/%d")
+    yesterday_ymd = (now - timedelta(days=1)).strftime("%Y/%m/%d")
+    rolling_7d_ymd = (now - timedelta(days=7)).strftime("%Y/%m/%d")
+
+    weekday = now.weekday()  # 0=Monday, 6=Sunday
+    prior_week_monday = now - timedelta(days=weekday + 7)
+    prior_week_sunday = now - timedelta(days=weekday + 1)
+    current_week_monday = now - timedelta(days=weekday)
+
+    prior_week_monday_ymd = prior_week_monday.strftime("%Y/%m/%d")
+    current_week_monday_ymd = current_week_monday.strftime("%Y/%m/%d")
+    cal_week_query = f"after:{prior_week_monday_ymd} before:{current_week_monday_ymd}"
+
+    # Smart Range for "last week":
+    # Mon-Wed (early week): "last week" refers to the completed previous calendar week.
+    # Thu-Sun (late week): "last week" refers to the rolling 7-day window up to today.
+    is_early_week = weekday in (0, 1, 2)
+    if is_early_week:
+        smart_last_week_query = cal_week_query
+        smart_last_week_desc = f"previous calendar week ({prior_week_monday.strftime('%b %d')} to {prior_week_sunday.strftime('%b %d')})"
+    else:
+        smart_last_week_query = f"after:{rolling_7d_ymd}"
+        smart_last_week_desc = f"past 7 rolling days ({rolling_7d_ymd} to {today_ymd})"
+
+    return (
+        current_date_str,
+        today_ymd,
+        yesterday_ymd,
+        rolling_7d_ymd,
+        cal_week_query,
+        smart_last_week_query,
+        smart_last_week_desc,
+    )
+
+
+def build_agent_system_prompt(
+    *, current_email_id: str | None, selected_email_id: str | None, now: datetime | None = None
+) -> str:
+    (
+        current_date_str,
+        today_ymd,
+        yesterday_ymd,
+        rolling_7d_ymd,
+        cal_week_query,
+        smart_last_week_query,
+        smart_last_week_desc,
+    ) = compute_temporal_context(now)
+
     context = []
     if selected_email_id:
         context.append(f"The user selected email ID: {selected_email_id}.")
@@ -14,7 +63,13 @@ def build_agent_system_prompt(*, current_email_id: str | None, selected_email_id
 
 Temporal Context:
 - Today's date is: {current_date_str} (UTC).
-- When the user asks for relative dates like "yesterday", "today", "last week", or "this month", calculate the exact date based on today's date ({current_date_str}) and query using Gmail operators (e.g. `after:YYYY/MM/DD`, `before:YYYY/MM/DD`, `newer_than:2d`, `newer_than:7d`). Never pass the literal words "yesterday" or "last week" as the search query.
+- Calculated date operators for query formulation (use these exact Gmail syntax queries):
+  * "today": `after:{today_ymd}` or `newer_than:1d`
+  * "yesterday": `after:{yesterday_ymd} before:{today_ymd}`
+  * "past 7 days" or "past week": `after:{rolling_7d_ymd}` or `newer_than:7d`
+  * "last calendar week" or "previous week": `{cal_week_query}`
+  * "last week" (Smart Range): `{smart_last_week_query}` ({smart_last_week_desc})
+- When the user asks for relative dates, apply the calculated Gmail search operators above. Never pass relative English words like "yesterday" or "last week" as the search query.
 
 Identity and Persona:
 - Your name is BridgeAI (or BridgeAI Email Agent).
