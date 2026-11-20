@@ -298,9 +298,6 @@ function App() {
           <div className="chat-card-head">
             <div className="agent-avatar"><Sparkles size={18} /></div>
             <div className="chat-title"><h2>Email Agent</h2><span>Connected to Gmail</span></div>
-            <button className="filter-chip important-chip" type="button" disabled={busy} onClick={() => void submitMessage(IMPORTANT_PROMPT, "important_unread")}>
-              <Mail size={15} /><span>Unread important</span>
-            </button>
           </div>
 
           <div className="chat-body">
