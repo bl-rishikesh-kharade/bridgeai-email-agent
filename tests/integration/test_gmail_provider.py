@@ -228,8 +228,8 @@ def test_gmail_url_with_account_preserves_email_at_symbol():
     provider = GmailEmailProvider(service)
     email = GmailEmailProvider.map_message(message("thread-456"))
     url = provider.gmail_url(email)
-    assert url == "https://mail.google.com/mail/u/rishikesh.kharade@bridgelabz.com/#all/thread-456"
-    assert "%40" not in url
+    assert url == "https://mail.google.com/mail/?authuser=rishikesh.kharade@bridgelabz.com#all/thread-456"
+    assert "/u/" not in url
 
 
 def test_list_emails_skips_corrupted_message_and_returns_valid_messages():
