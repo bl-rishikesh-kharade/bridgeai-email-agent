@@ -433,6 +433,18 @@ function App() {
           {usedRecentWindow && <p className="filter-window-notice">There are more than 100 unread important emails, so this result is limited to the last 48 hours.</p>}
           <form className="composer" onSubmit={handleSubmit}>
             {error && <div className="inline-error" role="status">{error}</div>}
+            <div className="composer-shortcuts">
+              <button
+                type="button"
+                className="shortcut-chip"
+                disabled={busy}
+                onClick={() => void submitMessage(IMPORTANT_PROMPT, "important_unread")}
+                title="Fetch unread emails marked important in Gmail"
+              >
+                <Mail size={13} />
+                <span>Unread important</span>
+              </button>
+            </div>
             <div className="composer-box">
               <textarea ref={inputRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleKeyDown} maxLength={4000} placeholder="Message your Email Agent…" aria-label="Message your Email Agent" rows={1} />
               <button className="send-button" type="submit" disabled={busy || !draft.trim()} aria-label="Send message" title="Send message">
