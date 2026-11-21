@@ -1,37 +1,25 @@
-import json
-from fastapi import APIRouter, Request
+import logging
+from fastapi import APIRouter, Request, Response
 
+from app.core.session import resolve_session_provider
 from app.schemas.agent import AgentChatRequest, AgentChatResponse, MarkEmailsReadRequest, MarkEmailsReadResponse
-from app.integrations.email.gmail_provider import GmailEmailProvider
 from app.services.email_summary import batch_summarize_emails, extract_clean_summary, extract_meeting_url
+
+logger = logging.getLogger(__name__)
 
 
 def build_router(chat_service, email_provider, oauth_manager=None):
     router = APIRouter(prefix="/agent", tags=["agent"])
 
-    def _resolve_request_provider(http_request: Request):
-        if oauth_manager:
-            auth_cookie = http_request.cookies.get("bridgeai_session_token")
-            if auth_cookie:
-                try:
-                    import base64
-                    if auth_cookie.startswith("{"):
-                        token_data = json.loads(auth_cookie)
-                    else:
-                        pad = 4 - (len(auth_cookie) % 4)
-                        if pad != 4:
-                            auth_cookie += "=" * pad
-                        token_data = json.loads(base64.urlsafe_b64decode(auth_cookie.encode("ascii")).decode("utf-8"))
-                    creds = oauth_manager.credentials_from_token(token_data)
-                    return GmailEmailProvider(service_factory=lambda: oauth_manager.service("gmail", "v1", creds=creds), oauth_manager=oauth_manager)
-                except Exception:
-                    pass
-        return email_provider
-
     @router.post("/chat", response_model=AgentChatResponse)
-    def chat(request: AgentChatRequest, http_request: Request):
+    def chat(request: AgentChatRequest, http_request: Request, http_response: Response):
         try:
-            active_provider = _resolve_request_provider(http_request)
+            active_provider, _ = resolve_session_provider(
+                request=http_request,
+                response=http_response,
+                oauth_manager=oauth_manager,
+                fallback_provider=email_provider,
+            )
             result = chat_service.handle_request({
                 "message": request.message,
                 "filter_id": request.filter_id,
@@ -87,14 +75,18 @@ def build_router(chat_service, email_provider, oauth_manager=None):
             )
 
     @router.post("/emails/mark-read", response_model=MarkEmailsReadResponse)
-    def mark_emails_read(request: MarkEmailsReadRequest, http_request: Request):
-        active_provider = _resolve_request_provider(http_request)
+    def mark_emails_read(request: MarkEmailsReadRequest, http_request: Request, http_response: Response):
+        active_provider, _ = resolve_session_provider(
+            request=http_request,
+            response=http_response,
+            oauth_manager=oauth_manager,
+            fallback_provider=email_provider,
+        )
         try:
             count = active_provider.mark_as_read(request.email_ids)
             return MarkEmailsReadResponse(success=True, marked_count=count, marked_ids=request.email_ids)
         except Exception as exc:
-            import logging
-            logging.getLogger(__name__).exception("Failed to mark emails as read: %s", exc)
+            logger.exception("Failed to mark emails as read: %s", exc)
             return MarkEmailsReadResponse(success=False, marked_count=0, marked_ids=[])
 
     return router

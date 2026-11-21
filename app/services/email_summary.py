@@ -100,6 +100,10 @@ def _clean_body_text(body: str | None) -> list[str]:
     if not body:
         return []
 
+    # Defense-in-depth: cap raw email body to 65KB to prevent ReDoS or memory spikes on giant attachments
+    if len(body) > 65536:
+        body = body[:65536]
+
     # Remove <style>, <script>, <head> blocks completely
     text = re.sub(r"(?is)<(style|script|head)[^>]*>.*?</\1>", " ", body)
     text = re.sub(r"(?s)<!--.*?-->", " ", text)

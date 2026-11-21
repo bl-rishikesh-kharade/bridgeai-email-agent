@@ -1,70 +1,34 @@
-import base64
-import json
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
+from app.core.session import (
+    SESSION_COOKIE_NAME,
+    clear_session_cookie,
+    decode_session_token,
+    encode_session_token,
+    is_https_request,
+    resolve_session_provider,
+    set_session_cookie,
+)
 from app.integrations.google.oauth import GoogleOAuthError
 from app.integrations.email.gmail_provider import GmailEmailProvider, GmailProviderError
-
-
-def _encode_session_token(token_data: dict) -> str:
-    raw = json.dumps(token_data).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("ascii")
-
-
-def _decode_session_token(cookie_str: str) -> dict | None:
-    try:
-        if cookie_str.startswith("{"):
-            return json.loads(cookie_str)
-        padding = 4 - (len(cookie_str) % 4)
-        if padding != 4:
-            cookie_str += "=" * padding
-        raw = base64.urlsafe_b64decode(cookie_str.encode("ascii"))
-        return json.loads(raw.decode("utf-8"))
-    except Exception:
-        return None
 
 
 def build_router(oauth_manager, email_provider):
     router = APIRouter(prefix="/auth", tags=["auth"])
 
-    def _resolve_session_provider(request: Request, response: Response | None = None):
-        """Build provider from session cookie if present, auto-refreshing expired token if needed."""
-        auth_cookie = request.cookies.get("bridgeai_session_token")
-        if auth_cookie:
-            token_data = _decode_session_token(auth_cookie)
-            if token_data:
-                try:
-                    orig_token = token_data.get("token")
-                    creds = oauth_manager.credentials_from_token(token_data)
-                    # If token was refreshed, update the session cookie in response
-                    if response is not None and token_data.get("token") != orig_token:
-                        is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https" or "vercel.app" in str(request.base_url)
-                        response.set_cookie(
-                            key="bridgeai_session_token",
-                            value=_encode_session_token(token_data),
-                            httponly=True,
-                            samesite="lax",
-                            secure=is_https,
-                            max_age=30 * 86400,
-                        )
-                    return GmailEmailProvider(service_factory=lambda: oauth_manager.service("gmail", "v1", creds=creds), oauth_manager=oauth_manager)
-                except Exception:
-                    pass
-        return email_provider
-
     @router.get("/status")
     def status(request: Request, response: Response):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         # 1. Check browser session cookie (Web / Vercel mode)
-        auth_cookie = request.cookies.get("bridgeai_session_token")
+        auth_cookie = request.cookies.get(SESSION_COOKIE_NAME)
         if auth_cookie:
-            token_data = _decode_session_token(auth_cookie)
+            token_data = decode_session_token(auth_cookie)
             if token_data:
                 cached_email = token_data.get("email")
                 try:
-                    session_provider = _resolve_session_provider(request, response)
+                    session_provider, _ = resolve_session_provider(request, response, oauth_manager, email_provider)
                     email_addr = session_provider.get_account_email()
                     return {"connected": True, "email": email_addr}
                 except (GoogleOAuthError, GmailProviderError, Exception):
@@ -90,6 +54,7 @@ def build_router(oauth_manager, email_provider):
             except Exception:
                 if oauth_manager.token_path.is_file():
                     try:
+                        import json
                         d = json.loads(oauth_manager.token_path.read_text(encoding="utf-8"))
                         if d.get("refresh_token"):
                             return {"connected": True, "email": d.get("account") or None}
@@ -101,7 +66,7 @@ def build_router(oauth_manager, email_provider):
     def login(request: Request):
         """Initiate Web OAuth redirect (used in cloud/Vercel environments)."""
         redirect_uri = settings.google_redirect_uri or str(request.url_for("auth_callback"))
-        is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https" or "vercel.app" in str(request.base_url)
+        is_https = is_https_request(request)
         if is_https and redirect_uri.startswith("http://"):
             redirect_uri = redirect_uri.replace("http://", "https://", 1)
         try:
@@ -124,7 +89,7 @@ def build_router(oauth_manager, email_provider):
     def callback(code: str, request: Request):
         """Receive Google OAuth callback, store token in session cookie, and redirect directly to home."""
         redirect_uri = settings.google_redirect_uri or str(request.url_for("auth_callback"))
-        is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https" or "vercel.app" in str(request.base_url)
+        is_https = is_https_request(request)
         if is_https and redirect_uri.startswith("http://"):
             redirect_uri = redirect_uri.replace("http://", "https://", 1)
         code_verifier = request.cookies.get("bridgeai_code_verifier")
@@ -145,16 +110,8 @@ def build_router(oauth_manager, email_provider):
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
             response.delete_cookie("bridgeai_code_verifier", path="/")
-            # Set httpOnly session cookie with urlsafe base64 token
-            response.set_cookie(
-                key="bridgeai_session_token",
-                value=_encode_session_token(token_dict),
-                httponly=True,
-                samesite="lax",
-                secure=is_https,
-                max_age=60 * 60 * 24 * 7,  # 7 days
-                path="/",
-            )
+            # Persist session with 30-day lifetime
+            set_session_cookie(response, token_dict, request)
             return response
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"OAuth authorization failed: {exc}") from exc
@@ -175,7 +132,7 @@ def build_router(oauth_manager, email_provider):
     @router.post("/disconnect")
     def disconnect(response: Response):
         """Disconnect and clear both session cookies and local authorization."""
-        response.delete_cookie("bridgeai_session_token", path="/")
+        clear_session_cookie(response)
         response.delete_cookie("bridgeai_code_verifier", path="/")
         try:
             oauth_manager.disconnect()

@@ -60,7 +60,7 @@ def create_app():
     def home():
         react_index = react_ui_dir / "index.html"
         return FileResponse(
-            react_index if react_index.is_file() else static_dir / "index.html",
+            react_index,
             headers={
                 "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
                 "Pragma": "no-cache",
