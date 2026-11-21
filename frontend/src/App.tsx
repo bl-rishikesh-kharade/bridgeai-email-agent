@@ -217,7 +217,9 @@ function App() {
           id: crypto.randomUUID(),
           role: "assistant",
           text: isTimeout
-            ? "The request took longer than expected while fetching from Gmail. Please click **Unread important** again to retry."
+            ? (filterId === "important_unread"
+                ? "The request took longer than expected while fetching from Gmail. Please click **Unread important** again to retry."
+                : "The request took longer than expected while contacting Gmail. Please try your request again.")
             : message.includes("504")
             ? "The cloud server timed out while contacting Gmail. Please try again."
             : "I couldn't complete that request right now. Please try again.",

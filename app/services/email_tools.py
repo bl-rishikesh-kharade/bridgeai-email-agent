@@ -18,12 +18,16 @@ class _Args(BaseModel):
 
 class ListEmailsArgs(_Args):
     limit: int = Field(default=10, ge=1, le=100)
+    exclude_senders: list[str] = Field(default_factory=list)
+    exclude_keywords: list[str] = Field(default_factory=list)
 
 
 class SearchEmailsArgs(_Args):
     query: str = Field(min_length=1, max_length=200)
     sender_only: bool = False
     unread_only: bool = False
+    exclude_senders: list[str] = Field(default_factory=list)
+    exclude_keywords: list[str] = Field(default_factory=list)
     limit: int = Field(default=10, ge=1, le=100)
 
 
@@ -49,8 +53,8 @@ class ToolOutcome:
 
 
 TOOL_DECLARATIONS = [
-    {"name": "list_recent_emails", "description": "List recent emails from the user's mailbox.", "parameters_json_schema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 100}}, "additionalProperties": False}},
-    {"name": "search_emails", "description": "Find matching emails by topic, subject, sender, or date constraints. You can search for unread emails (set unread_only: true), date ranges using Gmail query syntax (e.g. after:2026/10/01 before:2026/11/01, newer_than:7d, newer_than:2d), or specific senders/topics.", "parameters_json_schema": {"type": "object", "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200}, "sender_only": {"type": "boolean"}, "unread_only": {"type": "boolean"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": ["query"], "additionalProperties": False}},
+    {"name": "list_recent_emails", "description": "List recent emails from the user's mailbox. You can exclude senders (exclude_senders) or exclude keywords (exclude_keywords).", "parameters_json_schema": {"type": "object", "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 100}, "exclude_senders": {"type": "array", "items": {"type": "string"}}, "exclude_keywords": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": False}},
+    {"name": "search_emails", "description": "Find matching emails by topic, subject, sender, or date constraints. You can search for unread emails (set unread_only: true), date ranges using Gmail query syntax (e.g. after:2026/10/01 before:2026/11/01, newer_than:7d, newer_than:2d), or specific senders/topics. You can also exclude senders (exclude_senders) or exclude keywords (exclude_keywords).", "parameters_json_schema": {"type": "object", "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200}, "sender_only": {"type": "boolean"}, "unread_only": {"type": "boolean"}, "exclude_senders": {"type": "array", "items": {"type": "string"}}, "exclude_keywords": {"type": "array", "items": {"type": "string"}}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": ["query"], "additionalProperties": False}},
     {"name": "get_email", "description": "Retrieve one exact email by ID, or the selected/current email when email_id is omitted.", "parameters_json_schema": {"type": "object", "properties": {"email_id": {"type": "string", "maxLength": 256}}, "additionalProperties": False}},
     {"name": "review_email", "description": "Summarize and analyze one exact email, including priority and action items.", "parameters_json_schema": {"type": "object", "properties": {"email_id": {"type": "string", "maxLength": 256}}, "additionalProperties": False}},
     {"name": "filter_unread_emails", "description": "Find unread important emails from the user's mailbox using priority signals. You can supply exclude_senders to omit specific senders/domains (e.g. ['chitkara.edu.in']), and exclude_keywords to omit specific topics or words (e.g. ['circular', 'newsletter', 'fee']).", "parameters_json_schema": {"type": "object", "properties": {"filter_id": {"type": "string", "enum": ["important_unread"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}, "exclude_senders": {"type": "array", "items": {"type": "string"}}, "exclude_keywords": {"type": "array", "items": {"type": "string"}}}, "required": ["filter_id"], "additionalProperties": False}},
@@ -123,7 +127,13 @@ class EmailAgentTools:
     def _list_emails(self, args: ListEmailsArgs, request_context: dict[str, Any]) -> ToolOutcome:
         provider = self._resolve_provider(request_context)
         raw = provider.list_emails(min(args.limit, settings.max_email_list_limit))
-        ranked = self.signal_engine.filter_and_rank_emails(raw, only_important=False, limit=args.limit)
+        ranked = self.signal_engine.filter_and_rank_emails(
+            raw,
+            only_important=False,
+            limit=args.limit,
+            exclude_senders=args.exclude_senders,
+            exclude_keywords=args.exclude_keywords,
+        )
         emails = [item[0] for item in ranked]
         reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked]
         return ToolOutcome(
@@ -139,7 +149,13 @@ class EmailAgentTools:
         raw = provider.search_emails(args.query, limit=args.limit, sender_only=args.sender_only)
         if args.unread_only:
             raw = [e for e in raw if not e.is_read]
-        ranked = self.signal_engine.filter_and_rank_emails(raw, only_important=False, limit=args.limit)
+        ranked = self.signal_engine.filter_and_rank_emails(
+            raw,
+            only_important=False,
+            limit=args.limit,
+            exclude_senders=args.exclude_senders,
+            exclude_keywords=args.exclude_keywords,
+        )
         emails = [item[0] for item in ranked]
         reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked]
         return ToolOutcome(
