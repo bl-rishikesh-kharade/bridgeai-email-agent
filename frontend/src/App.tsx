@@ -204,12 +204,16 @@ function App() {
     }]);
     setDraft("");
     setBusy(true);
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(() => abortController.abort(), 45000);
     try {
       const response = await fetch("/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: clean, filter_id: filterId, history: historyPayload }),
+        signal: abortController.signal,
       });
+      clearTimeout(timeoutId);
       const data = await response.json().catch(() => ({})) as Partial<ChatResponse>;
       if (!response.ok) throw new Error(data.detail || `The request failed (${response.status}).`);
       if (data.auth_required) {
@@ -235,12 +239,24 @@ function App() {
         time: new Date(), emailOptions: data.email_options,
       }]);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "The request could not be completed.";
+      clearTimeout(timeoutId);
+      const isTimeout = caught instanceof Error && caught.name === "AbortError";
+      const message = isTimeout
+        ? "The request timed out while communicating with Gmail. Please try again."
+        : (caught instanceof Error ? caught.message : "The request could not be completed.");
       setError(message);
       setMessages((current) => [...current, {
-        id: crypto.randomUUID(), role: "assistant", text: "I couldn't complete that request. Please try again.", time: new Date(),
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: isTimeout
+          ? "The request took longer than expected while fetching from Gmail. Please click **Unread important** again to retry."
+          : (message.includes("504")
+            ? "The cloud server timed out while contacting Gmail. Please try again."
+            : "I couldn't complete that request right now. Please try again."),
+        time: new Date(),
       }]);
     } finally {
+      clearTimeout(timeoutId);
       setBusy(false);
       inputRef.current?.focus();
     }

@@ -179,9 +179,9 @@ class EmailAgentTools:
         display_limit = min(args.limit, 100) if args.limit else 100
 
         if strategy == "signals":
-            # 1. Candidate Pool: Always fetch a 150-email unread pool directly from Gmail
-            # (No 48-hour cut-off, ensuring older unread critical/high emails are never missed)
-            pool_limit = 150
+            # 1. Candidate Pool: Fetch candidate unread emails directly from Gmail
+            # 100 emails ensures ultra-fast response (<3s) on cloud serverless and local environments
+            pool_limit = min(settings.max_email_list_limit, 100)
             try:
                 unread_pool = provider.list_filtered_emails("unread", limit=pool_limit)
             except Exception:

@@ -10,6 +10,14 @@
       "framework": "vite"
     }
   },
+  "functions": {
+    "app/main.py": {
+      "maxDuration": 60
+    },
+    "api/**/*.py": {
+      "maxDuration": 60
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",

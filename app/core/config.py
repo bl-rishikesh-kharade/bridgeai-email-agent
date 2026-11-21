@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     signals_config_path: str = "config/signals.json"
 
     # Limits
-    max_email_list_limit: int = Field(default=150, ge=1, le=500)
+    max_email_list_limit: int = Field(default=100, ge=1, le=500)
     default_email_list_limit: int = Field(default=100, ge=1, le=100)
 
     @field_validator("log_level")
