@@ -1,11 +1,12 @@
 import React from "react";
-import { LoaderCircle, LogOut, Mail } from "lucide-react";
+import { LoaderCircle, LogOut, Mail, Plus } from "lucide-react";
 
 interface NavbarProps {
   email?: string | null;
   busy: boolean;
   switchingAccount: boolean;
   onSwitchAccount: () => void;
+  onResetChat: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -13,10 +14,17 @@ export const Navbar: React.FC<NavbarProps> = ({
   busy,
   switchingAccount,
   onSwitchAccount,
+  onResetChat,
 }) => {
   return (
     <header className="topbar app-topbar">
-      <a className="brand" href="/" aria-label="BridgeAI Email Agent home">
+      <button
+        className="brand"
+        type="button"
+        onClick={onResetChat}
+        aria-label="BridgeAI Email Agent home - start new chat"
+        style={{ background: "transparent", border: 0, padding: 0, cursor: "pointer", textAlign: "left" }}
+      >
         <span className="brand-mark">
           <Mail size={19} />
         </span>
@@ -24,9 +32,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           <strong>BridgeAI</strong>
           <span>Email Agent</span>
         </span>
-      </a>
+      </button>
       <div className="topbar-right">
         {email && <span className="connected-account">{email}</span>}
+        <button
+          className="new-chat-button"
+          type="button"
+          onClick={onResetChat}
+          disabled={busy}
+          title="Start a fresh chat"
+        >
+          <Plus size={14} />
+          <span>New chat</span>
+        </button>
         <button
           className="switch-account-button"
           type="button"

@@ -8,6 +8,25 @@ import { EmailCard } from "./components/EmailCard";
 import { EmailActionToolbar } from "./components/EmailActionToolbar";
 import { ChatComposer } from "./components/ChatComposer";
 
+const SESSION_STORAGE_KEY = "bridgeai_active_chat";
+
+function loadSessionMessages(): Message[] {
+  try {
+    const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.map((m) => ({
+        ...m,
+        time: new Date(m.time),
+      }));
+    }
+  } catch {
+    // Ignore parsing errors
+  }
+  return [];
+}
+
 function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -15,7 +34,7 @@ function App() {
   const [switchingAccount, setSwitchingAccount] = useState(false);
   const [authError, setAuthError] = useState("");
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(loadSessionMessages);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [loadingText, setLoadingText] = useState("Thinking…");
@@ -28,11 +47,37 @@ function App() {
     void checkAuth();
   }, []);
 
+  // Sync messages to browser sessionStorage so Ctrl+R preserves the active chat
+  useEffect(() => {
+    try {
+      if (messages.length > 0) {
+        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(messages));
+      } else {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore quota errors
+    }
+  }, [messages]);
+
   useEffect(() => {
     if (messages.length > 0 || busy) {
       window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" });
     }
   }, [messages, busy]);
+
+  function handleResetChat() {
+    setMessages([]);
+    setDraft("");
+    setError("");
+    setSelectedEmailIds(new Set());
+    setMarkedReadIds(new Set());
+    try {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch {
+      // Ignore
+    }
+  }
 
   async function checkAuth() {
     setCheckingAuth(true);
@@ -322,6 +367,7 @@ function App() {
         busy={busy}
         switchingAccount={switchingAccount}
         onSwitchAccount={() => void switchGoogleAccount()}
+        onResetChat={handleResetChat}
       />
 
       <main className="workspace local-chat-workspace">

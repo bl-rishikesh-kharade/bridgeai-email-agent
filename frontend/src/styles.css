@@ -234,9 +234,9 @@ h1 { margin-bottom: 7px; color: #17263b; font: 700 clamp(24px, 3.2vw, 32px)/1.25
 .auth-privacy svg { flex: 0 0 auto; color: #369975; }
 .app-topbar .topbar-right { display: flex; align-items: center; gap: 18px; }
 .connected-account, .chat-account { color: #728198; font-size: 11px; }
-.switch-account-button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; color: #58677e; border: 1px solid #e5eaf1; border-radius: 9px; background: #fff; font-size: 11px; font-weight: 600; cursor: pointer; }
-.switch-account-button:hover:not(:disabled) { color: var(--blue); border-color: #ccd3f7; background: #f9faff; }
-.switch-account-button:disabled { opacity: .6; cursor: wait; }
+.switch-account-button, .new-chat-button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; color: #58677e; border: 1px solid #e5eaf1; border-radius: 9px; background: #fff; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; }
+.switch-account-button:hover:not(:disabled), .new-chat-button:hover:not(:disabled) { color: var(--blue); border-color: #ccd3f7; background: #f9faff; }
+.switch-account-button:disabled, .new-chat-button:disabled { opacity: .6; cursor: wait; }
 .local-chat-workspace { padding-bottom: 30px; }
 .local-chat-workspace .welcome-row { margin-bottom: 24px; }
 .local-chat-workspace .chat-card { min-height: min(680px, calc(100dvh - 260px)); }
