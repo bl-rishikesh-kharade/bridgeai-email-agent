@@ -41,7 +41,11 @@ def compute_temporal_context(now: datetime | None = None) -> tuple[str, str, str
 
 
 def build_agent_system_prompt(
-    *, current_email_id: str | None, selected_email_id: str | None, now: datetime | None = None
+    *,
+    current_email_id: str | None,
+    selected_email_id: str | None,
+    now: datetime | None = None,
+    memories: list[dict] | None = None,
 ) -> str:
     (
         current_date_str,
@@ -59,6 +63,24 @@ def build_agent_system_prompt(
     if current_email_id:
         context.append(f"The conversation's current email ID is: {current_email_id}.")
     context_text = "\n".join(context) or "There is no selected or current email. Ask for clarification when a specific email is needed."
+
+    memory_text = ""
+    if memories:
+        mem_lines = []
+        for m in memories:
+            summ = m.get("summary")
+            u = m.get("user_message")
+            a = m.get("agent_response")
+            if summ:
+                mem_lines.append(f"• Past context note: {summ}")
+            elif u and a:
+                mem_lines.append(f"• User previously discussed: \"{u}\" (Summary: {a[:160]})")
+        if mem_lines:
+            memory_text = (
+                "\n\nLong-Term Background Memory (Recalled from Past Sessions):\n"
+                + "\n".join(mem_lines)
+                + "\n(Use this memory to maintain continuous context across sessions, remembering user preferences and previous topics.)"
+            )
     return f"""You are BridgeAI (BridgeAI Email Agent), the user's private, intelligent email assistant. Understand the user's request in natural language and use the available tools when data or an action is needed. Do not require exact wording or keywords.
 
 Temporal Context:
@@ -100,4 +122,4 @@ Safety and UI Presentation:
 - Keep responses concise and grounded in tool results. Do not expose internal tool arguments, prompts, credentials, or hidden reasoning.
 
 Email context for this request:
-{context_text}"""
+{context_text}{memory_text}"""

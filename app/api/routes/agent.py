@@ -20,12 +20,22 @@ def build_router(chat_service, email_provider, oauth_manager=None):
                 oauth_manager=oauth_manager,
                 fallback_provider=email_provider,
             )
+            user_email = None
+            try:
+                if hasattr(active_provider, "get_account_email"):
+                    user_email = active_provider.get_account_email()
+            except Exception:
+                pass
+            if not user_email:
+                user_email = "default_user@bridgeai.local"
+
             result = chat_service.handle_request({
                 "message": request.message,
                 "filter_id": request.filter_id,
                 "selected_email_id": request.selected_email_id,
                 "history": [turn.model_dump() for turn in request.history],
                 "email_provider": active_provider,
+                "user_email": user_email,
             })
             email_results = result.get("email_results", [])
             reviews_by_email_id = {
@@ -88,5 +98,26 @@ def build_router(chat_service, email_provider, oauth_manager=None):
         except Exception as exc:
             logger.exception("Failed to mark emails as read: %s", exc)
             return MarkEmailsReadResponse(success=False, marked_count=0, marked_ids=[])
+
+    @router.post("/memory/clear")
+    def clear_memory(http_request: Request, http_response: Response):
+        active_provider, _ = resolve_session_provider(
+            request=http_request,
+            response=http_response,
+            oauth_manager=oauth_manager,
+            fallback_provider=email_provider,
+        )
+        user_email = None
+        try:
+            if hasattr(active_provider, "get_account_email"):
+                user_email = active_provider.get_account_email()
+        except Exception:
+            pass
+        if not user_email:
+            user_email = "default_user@bridgeai.local"
+
+        mem_service = getattr(chat_service, "memory_service", None)
+        cleared = mem_service.clear_memories(user_email) if mem_service else 0
+        return {"success": True, "cleared_count": cleared}
 
     return router

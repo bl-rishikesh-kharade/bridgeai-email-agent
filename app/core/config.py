@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_file_path: str | None = None
 
+    # Database & Long-term Vector Memory
+    database_url: str | None = None
+
     # Gemini
     gemini_api_key: str | None = None
     gemini_model: str = Field(default="gemini-3.8-flash", min_length=1, max_length=100)

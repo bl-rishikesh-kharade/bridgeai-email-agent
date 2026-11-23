@@ -20,6 +20,7 @@ _SAFE_FIELDS = (
     "environment",
     "log_file", "tool_name", "reason",
     "cause_type", "winerror", "errno",
+    "user_email", "has_vector", "database", "count", "deleted_count",
 )
 
 
@@ -40,7 +41,10 @@ class _JsonFormatter(logging.Formatter):
 
 def log_event(event: str, *, level: int = logging.INFO, **fields: Any) -> None:
     """Write only explicitly supplied, non-sensitive operational fields."""
-    logger.log(level, event, extra={"event": event, **fields})
+    try:
+        logger.log(level, event, extra={"event": event, **fields})
+    except Exception:
+        pass
 
 
 def _default_log_path() -> Path:
@@ -55,13 +59,27 @@ def _default_log_path() -> Path:
     return base / "BridgeAI Email Agent" / "logs" / "bridgeai.log"
 
 
+class _SafeStreamHandler(logging.StreamHandler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            if self.stream and not getattr(self.stream, "closed", False):
+                super().emit(record)
+        except (ValueError, OSError):
+            pass
+
+    def handleError(self, record: logging.LogRecord) -> None:
+        if getattr(self.stream, "closed", False):
+            return
+        super().handleError(record)
+
+
 logger = logging.getLogger("bridgeai")
 logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
 logger.propagate = False
 
 if not logger.handlers:
     formatter = _JsonFormatter()
-    console = logging.StreamHandler(sys.stdout)
+    console = _SafeStreamHandler(sys.stdout)
     console.setFormatter(formatter)
     logger.addHandler(console)
     try:

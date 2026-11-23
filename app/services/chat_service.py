@@ -16,6 +16,7 @@ from app.services.ai_service import (
     analyze_email,
 )
 from app.services.email_tools import EmailAgentTools, TOOL_DECLARATIONS
+from app.services.memory_service import memory_service as default_memory_service
 
 
 MAX_TOOL_CALLS = 5
@@ -81,6 +82,7 @@ class ChatService:
         *,
         analyzer=analyze_email,
         model_turn=agent_turn,
+        memory_service=None,
         max_tool_calls: int = MAX_TOOL_CALLS,
     ):
         self.toolset = EmailAgentTools(
@@ -88,6 +90,7 @@ class ChatService:
             analyzer=analyzer,
         )
         self.model_turn = model_turn
+        self.memory_service = memory_service if memory_service is not None else default_memory_service
         self.max_tool_calls = max_tool_calls
 
     def handle_request(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -106,7 +109,19 @@ class ChatService:
                 "used_recent_window": False,
             }
 
-        request_context = _observe_step("prepare_request", self._prepare_request)(dict(request))
+        user_email = request.get("user_email") or "default_user@bridgeai.local"
+        memories = []
+        if self.memory_service and raw_msg:
+            try:
+                memories = self.memory_service.retrieve_relevant_memories(user_email, raw_msg, limit=3)
+            except Exception as exc:
+                logger.debug("Memory retrieval skipped: %s", exc)
+
+        enriched_request = dict(request)
+        enriched_request["user_email"] = user_email
+        enriched_request["memories"] = memories
+
+        request_context = _observe_step("prepare_request", self._prepare_request)(enriched_request)
         preset_calls = request_context.get("tool_calls", [])
         if preset_calls:
             request_context.update(_observe_step("run_tools", self._run_tools)(request_context))
@@ -134,6 +149,15 @@ class ChatService:
                 request_context["response"] = f"Here {'is the' if count == 1 else f'are the {count}'} email{'s' if count != 1 else ''} found in your mailbox:"
             else:
                 request_context["response"] = self._clean_card_response(resp, len(emails))
+
+        # Record conversation turn into persistent background memory (non-blocking)
+        final_resp = request_context.get("response", "")
+        if self.memory_service and final_resp and raw_msg and not request.get("skip_memory"):
+            self.memory_service.record_turn_async(
+                user_email=user_email,
+                user_message=raw_msg,
+                agent_response=final_resp,
+            )
 
         request_context.pop("tool_calls", None)
         request_context.pop("messages", None)
@@ -186,6 +210,7 @@ class ChatService:
         instruction = build_agent_system_prompt(
             current_email_id=request_context.get("current_email_id"),
             selected_email_id=request_context.get("selected_email_id"),
+            memories=request_context.get("memories"),
         )
         try:
             turn = self.model_turn(
@@ -323,6 +348,6 @@ class ChatService:
         }
 
 
-def build_chat_service(email_provider, **options) -> ChatService:
-    """Wire the providers and direct Gemini call into the chat coordinator."""
-    return ChatService(email_provider, **options)
+def build_chat_service(email_provider, memory_service=None, **options) -> ChatService:
+    """Wire the providers, memory service, and direct Gemini call into the chat coordinator."""
+    return ChatService(email_provider, memory_service=memory_service, **options)
