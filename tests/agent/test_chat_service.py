@@ -53,7 +53,22 @@ def test_chat_service_quota_error_message():
         raise exc
 
     service = build_chat_service(provider, model_turn=mock_model_turn)
-    result = service.handle_request({"message": "hey", "history": []})
+    result = service.handle_request({"message": "summarize my unread emails", "history": []})
 
     assert "rate limit or daily free-tier request quota" in result["response"]
+
+
+def test_chat_service_instant_fast_path_greeting():
+    provider = FakeEmailProvider()
+
+    # If fast path works, model_turn will never even be called!
+    def failing_model_turn(*args, **kwargs):
+        raise AssertionError("model_turn should NOT be called for simple greetings")
+
+    service = build_chat_service(provider, model_turn=failing_model_turn)
+    result = service.handle_request({"message": "Hey hi", "history": []})
+
+    assert "BridgeAI, your private AI email assistant" in result["response"]
+    assert result["email_results"] == []
+
 

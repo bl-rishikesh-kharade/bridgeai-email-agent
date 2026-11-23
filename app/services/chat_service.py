@@ -44,6 +44,34 @@ def _observe_step(name, step):
     return observed
 
 
+import re
+
+CONVERSATIONAL_GREETING_PATTERN = re.compile(
+    r"^(?:hey(?:\s+there|\s+hi)?|hi(?:\s+there|\s+hey)?|hello(?:\s+there)?|good\s+(?:morning|afternoon|evening)|howdy|greetings|what'?s\s+up|sup)[.!?\s]*$",
+    re.IGNORECASE,
+)
+CONVERSATIONAL_THANKS_PATTERN = re.compile(
+    r"^(?:thanks?(?:\s+a\s+lot|\s+so\s+much|\s+you)?|thank\s+you(?:\s+so\s+much|\s+very\s+much)?)[.!?\s]*$",
+    re.IGNORECASE,
+)
+
+
+def _check_conversational_fast_path(message: str) -> str | None:
+    """Return instant response for pure greetings or courtesies without making external LLM calls."""
+    cleaned = message.strip()
+    if CONVERSATIONAL_GREETING_PATTERN.match(cleaned):
+        return (
+            "Hello! I'm BridgeAI, your private AI email assistant. How can I help you with your inbox today?\n\n"
+            "Feel free to ask me to:\n"
+            "• Find specific emails (e.g., *\"Find emails from last week about project updates\"*)\n"
+            "• Filter unread or important messages (e.g., *\"Show my unread important emails\"*)\n"
+            "• Summarize or review an email (e.g., *\"Summarize the latest email from Alex\"*)"
+        )
+    if CONVERSATIONAL_THANKS_PATTERN.match(cleaned):
+        return "You're very welcome! Let me know if you need anything else with your mailbox."
+    return None
+
+
 class ChatService:
     """Handle one request with direct Gemini calls and ordinary Python functions."""
 
@@ -64,6 +92,20 @@ class ChatService:
 
     def handle_request(self, request: dict[str, Any]) -> dict[str, Any]:
         """Process one message; the temporary request context is discarded afterward."""
+        # Fast path 1: Instant response (<50ms) for pure greetings/courtesies without external LLM network latency
+        raw_msg = (request.get("message") or "").strip()
+        fast_resp = _check_conversational_fast_path(raw_msg)
+        if fast_resp:
+            log_event("chat.fast_path_greeting.hit", prompt_message=raw_msg)
+            return {
+                "response": fast_resp,
+                "current_email_id": request.get("current_email_id"),
+                "email_results": [],
+                "email_reviews": [],
+                "auth_required": False,
+                "used_recent_window": False,
+            }
+
         request_context = _observe_step("prepare_request", self._prepare_request)(dict(request))
         preset_calls = request_context.get("tool_calls", [])
         if preset_calls:

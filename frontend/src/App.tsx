@@ -18,6 +18,7 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loadingText, setLoadingText] = useState("Thinking…");
   const [error, setError] = useState("");
   const [selectedEmailIds, setSelectedEmailIds] = useState<Set<string>>(new Set());
   const [markedReadIds, setMarkedReadIds] = useState<Set<string>>(new Set());
@@ -145,6 +146,16 @@ function App() {
     const clean = text.trim();
     if (!clean || busy) return;
     setError("");
+
+    // Dynamic contextual loading label
+    if (filterId === "important_unread") {
+      setLoadingText("Fetching unread important emails…");
+    } else if (/\b(mail|email|inbox|unread|summar|search|find|sender|from|sent|recent)\b/i.test(clean)) {
+      setLoadingText("Searching your mailbox and reviewing emails…");
+    } else {
+      setLoadingText("Thinking…");
+    }
+
     const historyPayload = messages.slice(-10).map((m) => ({
       role: m.role,
       text: m.text,
@@ -423,7 +434,7 @@ function App() {
                     </div>
                     <div className="message-content">
                       <div className="message-bubble loading-bubble">
-                        <LoaderCircle size={16} className="spin" /> Analyzing your inbox and preparing summaries…
+                        <LoaderCircle size={16} className="spin" /> {loadingText}
                       </div>
                     </div>
                   </div>
