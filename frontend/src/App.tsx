@@ -262,7 +262,7 @@ function App() {
       clearTimeout(timeoutId);
       const isTimeout = caught instanceof Error && caught.name === "AbortError";
       const message = isTimeout
-        ? "The request timed out while communicating with Gmail. Please try again."
+        ? "The request took longer than expected. The AI service may be experiencing high demand."
         : caught instanceof Error
         ? caught.message
         : "The request could not be completed.";
@@ -275,9 +275,9 @@ function App() {
           text: isTimeout
             ? (filterId === "important_unread"
                 ? "The request took longer than expected while fetching from Gmail. Please click **Unread important** again to retry."
-                : "The request took longer than expected while contacting Gmail. Please try your request again.")
+                : "The request took longer than expected while waiting for the AI response. The AI model is experiencing high demand on Google's network — please try your request again.")
             : message.includes("504")
-            ? "The cloud server timed out while contacting Gmail. Please try again."
+            ? "The AI server timed out while processing your request. Please try again in a moment."
             : "I couldn't complete that request right now. Please try again.",
           time: new Date(),
         },

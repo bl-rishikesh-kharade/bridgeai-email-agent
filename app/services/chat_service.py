@@ -246,14 +246,15 @@ class ChatService:
                 }
 
             status = getattr(exc, "code", None)
-            if status == 429 or "RESOURCE_EXHAUSTED" in str(exc):
+            err_str = str(exc)
+            if status == 429 or "RESOURCE_EXHAUSTED" in err_str:
                 return {
                     "response": "The Gemini API rate limit or daily free-tier request quota has been reached. Please check your Google AI Studio plan or try again shortly.",
                     "tool_calls": [],
                 }
-            if status == 503 or "UNAVAILABLE" in str(exc):
+            if status in {503, 504} or "UNAVAILABLE" in err_str or "DEADLINE_EXCEEDED" in err_str:
                 return {
-                    "response": "The AI service is temporarily experiencing high demand. Please try sending your message again in a moment.",
+                    "response": "The AI service is temporarily experiencing high server demand or timeout on Google's network. Please try sending your message again in a moment.",
                     "tool_calls": [],
                 }
             return {"response": "I couldn't complete that request right now. Please try again.", "tool_calls": []}

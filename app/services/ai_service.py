@@ -38,13 +38,14 @@ class AIService:
 
     def _generate_content(self, operation: str, prompt, config=None):
         started = perf_counter()
-        # Cascade from the best available models down to lightweight fallbacks
+        # Cascade from fast, high-availability models down to fallbacks
         preferred_cascade = [
             settings.gemini_model,
+            "gemini-3.5-flash-lite",
             "gemini-3.8-flash",
+            "gemini-3.7-flash",
             "gemini-3.6-flash",
             "gemini-3.5-flash",
-            "gemini-3.5-flash-lite",
             "gemini-3.1-flash-lite",
         ]
         candidate_models = []
