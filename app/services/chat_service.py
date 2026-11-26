@@ -186,7 +186,8 @@ class ChatService:
     @staticmethod
     def _prepare_request(request_context: dict[str, Any]) -> dict[str, Any]:
         message = request_context.get("message", "")
-        history = request_context.get("history", [])
+        # Keep immediate multi-turn context lean (last 4 turns) to minimize token consumption
+        history = (request_context.get("history") or [])[-4:]
         messages = []
         for turn in history:
             role = "model" if turn.get("role") == "assistant" else "user"

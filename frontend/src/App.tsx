@@ -201,7 +201,8 @@ function App() {
       setLoadingText("Thinking…");
     }
 
-    const historyPayload = messages.slice(-10).map((m) => ({
+    // Keep in-flight chat payload minimal (last 4 messages); cross-session memory is handled by pgvector
+    const historyPayload = messages.slice(-4).map((m) => ({
       role: m.role,
       text: m.text,
     }));
