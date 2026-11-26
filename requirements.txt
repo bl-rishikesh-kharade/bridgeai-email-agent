@@ -10,3 +10,4 @@ google-auth-oauthlib
 email-validator
 psycopg2-binary
 pgvector
+groq

@@ -18,10 +18,17 @@ class Settings(BaseSettings):
     # Database & Long-term Vector Memory
     database_url: str | None = None
 
-    # Gemini
+    # LLM Provider & AI Models
+    llm_provider: Literal["groq", "gemini"] = "groq"
+
+    # Groq (Ultra-fast, proactive human-like responses)
+    groq_api_key: str | None = None
+    groq_model: str = Field(default="qwen/qwen3.8-27b", min_length=1, max_length=100)
+
+    # Gemini (Fallback & embedding engine)
     gemini_api_key: str | None = None
     gemini_model: str = Field(default="gemini-3.5-flash-lite", min_length=1, max_length=100)
-    gemini_temperature: float = Field(default=0.1, ge=0, le=2)
+    gemini_temperature: float = Field(default=0.2, ge=0, le=2)
 
     # OAuth
     oauth_credentials_path: str = "credentials/credentials.json"

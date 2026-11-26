@@ -7,15 +7,17 @@ from typing import Any
 
 from google.genai import types
 
+from app.core.config import settings
 from app.core.logger import log_event, logger
 from app.prompts.agent_system_prompt import build_agent_system_prompt
 from app.services.ai_service import (
     AIServiceConfigurationError,
     AgentToolCall,
-    agent_turn,
+    agent_turn as gemini_agent_turn,
     analyze_email,
 )
 from app.services.email_tools import EmailAgentTools, TOOL_DECLARATIONS
+from app.services.groq_service import get_groq_service
 from app.services.memory_service import memory_service as default_memory_service
 
 
@@ -81,7 +83,7 @@ class ChatService:
         email_provider,
         *,
         analyzer=analyze_email,
-        model_turn=agent_turn,
+        model_turn=gemini_agent_turn,
         memory_service=None,
         max_tool_calls: int = MAX_TOOL_CALLS,
     ):
@@ -213,52 +215,71 @@ class ChatService:
             selected_email_id=request_context.get("selected_email_id"),
             memories=request_context.get("memories"),
         )
-        try:
-            turn = self.model_turn(
-                request_context.get("messages", []), TOOL_DECLARATIONS, instruction,
-                tools_enabled=enabled,
-            )
-        except AIServiceConfigurationError:
-            return {"response": "Chat needs Gemini. Set GEMINI_API_KEY and try again.", "tool_calls": []}
-        except Exception as exc:
-            logger.warning(
-                "Gemini chat request failed (error_type=%s, status_code=%s, api_status=%s)",
-                type(exc).__name__, getattr(exc, "code", None), getattr(exc, "status", None),
-            )
-            # If tool results were already obtained, present them directly to the user
-            emails = request_context.get("email_results", [])
-            reviews = request_context.get("email_reviews", [])
-            if emails:
-                count = len(emails)
-                return {
-                    "response": f"Here {'is the' if count == 1 else f'are the {count}'} email{'s' if count != 1 else ''} found in your mailbox:",
-                    "tool_calls": [],
-                }
-            if reviews:
-                count = len(reviews)
-                return {
-                    "response": f"Here {'is the review' if count == 1 else f'are the reviews for {count} emails'}:",
-                    "tool_calls": [],
-                }
-            if request_context.get("tool_call_count", 0) > 0:
-                return {
-                    "response": "I checked your mailbox, but didn't find any matching emails.",
-                    "tool_calls": [],
-                }
+        turn = None
+        # Preferred fast provider (Groq) with automatic Gemini fallback
+        # When a custom mock model_turn is injected (e.g. in unit tests), respect it directly.
+        is_custom_mock = self.model_turn != gemini_agent_turn
+        if not is_custom_mock and settings.llm_provider == "groq" and settings.groq_api_key:
+            try:
+                groq_svc = get_groq_service()
+                turn = groq_svc.agent_turn(
+                    request_context.get("messages", []),
+                    TOOL_DECLARATIONS,
+                    instruction,
+                    tools_enabled=enabled,
+                )
+            except Exception as groq_exc:
+                logger.warning("Groq turn failed, falling back to Gemini: %s", groq_exc)
 
-            status = getattr(exc, "code", None)
-            err_str = str(exc)
-            if status == 429 or "RESOURCE_EXHAUSTED" in err_str:
-                return {
-                    "response": "The Gemini API rate limit or daily free-tier request quota has been reached. Please check your Google AI Studio plan or try again shortly.",
-                    "tool_calls": [],
-                }
-            if status in {503, 504} or "UNAVAILABLE" in err_str or "DEADLINE_EXCEEDED" in err_str:
-                return {
-                    "response": "The AI service is temporarily experiencing high server demand or timeout on Google's network. Please try sending your message again in a moment.",
-                    "tool_calls": [],
-                }
-            return {"response": "I couldn't complete that request right now. Please try again.", "tool_calls": []}
+        if turn is None:
+            try:
+                turn = self.model_turn(
+                    request_context.get("messages", []),
+                    TOOL_DECLARATIONS,
+                    instruction,
+                    tools_enabled=enabled,
+                )
+            except AIServiceConfigurationError:
+                return {"response": "Chat needs AI service. Set GROQ_API_KEY or GEMINI_API_KEY and try again.", "tool_calls": []}
+            except Exception as exc:
+                logger.warning(
+                    "Chat model request failed (error_type=%s, status_code=%s, api_status=%s)",
+                    type(exc).__name__, getattr(exc, "code", None), getattr(exc, "status", None),
+                )
+                # If tool results were already obtained, present them directly to the user
+                emails = request_context.get("email_results", [])
+                reviews = request_context.get("email_reviews", [])
+                if emails:
+                    count = len(emails)
+                    return {
+                        "response": f"Here {'is the' if count == 1 else f'are the {count}'} email{'s' if count != 1 else ''} found in your mailbox:",
+                        "tool_calls": [],
+                    }
+                if reviews:
+                    count = len(reviews)
+                    return {
+                        "response": f"Here {'is the review' if count == 1 else f'are the reviews for {count} emails'}:",
+                        "tool_calls": [],
+                    }
+                if request_context.get("tool_call_count", 0) > 0:
+                    return {
+                        "response": "I checked your mailbox, but didn't find any matching emails.",
+                        "tool_calls": [],
+                    }
+
+                status = getattr(exc, "code", None)
+                err_str = str(exc)
+                if status == 429 or "RESOURCE_EXHAUSTED" in err_str:
+                    return {
+                        "response": "The Gemini API rate limit or daily free-tier request quota has been reached. Please check your Google AI Studio plan or try again shortly.",
+                        "tool_calls": [],
+                    }
+                if status in {503, 504} or "UNAVAILABLE" in err_str or "DEADLINE_EXCEEDED" in err_str:
+                    return {
+                        "response": "The AI service is temporarily experiencing high server demand or timeout on Google's network. Please try sending your message again in a moment.",
+                        "tool_calls": [],
+                    }
+                return {"response": "I couldn't complete that request right now. Please try again.", "tool_calls": []}
 
         messages = list(request_context.get("messages", []))
         if turn.model_content is not None:
