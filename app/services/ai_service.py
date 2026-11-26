@@ -40,8 +40,8 @@ class AIService:
         started = perf_counter()
         # Cascade from high-availability, officially supported Gemini models
         preferred_cascade = [
-            settings.gemini_model,
             "gemini-3.5-flash-lite",
+            settings.gemini_model,
             "gemini-3.8-flash",
             "gemini-3.1-flash-lite",
         ]
