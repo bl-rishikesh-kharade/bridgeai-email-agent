@@ -8,9 +8,13 @@ from dataclasses import dataclass
 import json
 import logging
 from time import perf_counter
-from typing import Any
+try:
+    from groq import Groq
+    HAS_GROQ = True
+except ImportError:
+    Groq = None
+    HAS_GROQ = False
 
-from groq import Groq
 from app.core.config import settings
 from app.core.logger import log_event, logger
 from app.services.ai_service import AgentToolCall, AgentTurn, AIServiceConfigurationError
@@ -20,6 +24,8 @@ class GroqService:
     """Manages Groq chat completions, function calling, and fallback orchestration."""
 
     def __init__(self, api_key: str | None = None):
+        if not HAS_GROQ or Groq is None:
+            raise AIServiceConfigurationError("The 'groq' package is not installed.")
         self.api_key = api_key or settings.groq_api_key
         if not self.api_key:
             raise AIServiceConfigurationError("GROQ_API_KEY is not configured.")
