@@ -76,12 +76,82 @@ class MemoryService:
                         );
                         CREATE INDEX IF NOT EXISTS idx_chat_memories_user_email ON chat_memories(user_email);
                         CREATE INDEX IF NOT EXISTS idx_chat_memories_created_at ON chat_memories(created_at DESC);
+
+                        CREATE TABLE IF NOT EXISTS user_email_rules (
+                            id BIGSERIAL PRIMARY KEY,
+                            user_email VARCHAR(255) NOT NULL,
+                            rule_type VARCHAR(50) NOT NULL, -- 'exclude_sender', 'exclude_keyword', 'priority_override'
+                            target_pattern VARCHAR(255) NOT NULL, -- e.g. 'chitkara.edu.in', 'newsletter'
+                            priority_level VARCHAR(20) DEFAULT NULL, -- 'Critical', 'High', 'Medium', 'Low'
+                            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                        );
+                        CREATE INDEX IF NOT EXISTS idx_user_rules_email ON user_email_rules(user_email);
                     """)
                 conn.commit()
             self._initialized = True
             log_event("memory.schema.initialized", database="neon_pgvector")
         except Exception as exc:
             logger.warning("Could not initialize memory schema in PostgreSQL: %s", exc)
+
+    def get_user_rules(self, user_email: str) -> list[dict[str, Any]]:
+        """Retrieve dynamic custom email rules for a specific user from PostgreSQL."""
+        if not self.database_url or not HAS_POSTGRES or not user_email:
+            return []
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT rule_type, target_pattern, priority_level
+                        FROM user_email_rules
+                        WHERE user_email = %s
+                        ORDER BY id ASC;
+                        """,
+                        (user_email,),
+                    )
+                    rows = cur.fetchall()
+            return [
+                {"rule_type": r[0], "target_pattern": r[1], "priority_level": r[2]}
+                for r in rows
+            ]
+        except Exception as exc:
+            logger.debug("Could not fetch user rules: %s", exc)
+            return []
+
+    def save_user_rule(
+        self,
+        user_email: str,
+        rule_type: str,
+        target_pattern: str,
+        priority_level: str | None = None,
+    ) -> bool:
+        """Add or update an adaptive email rule for a user."""
+        if not self.database_url or not HAS_POSTGRES or not user_email or not target_pattern:
+            return False
+        clean_target = target_pattern.strip().lower()
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        DELETE FROM user_email_rules
+                        WHERE user_email = %s AND rule_type = %s AND LOWER(target_pattern) = %s;
+                        """,
+                        (user_email, rule_type, clean_target),
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO user_email_rules (user_email, rule_type, target_pattern, priority_level)
+                        VALUES (%s, %s, %s, %s);
+                        """,
+                        (user_email, rule_type, clean_target, priority_level),
+                    )
+                conn.commit()
+            log_event("memory.rule.saved", user_email=user_email, rule_type=rule_type, target=clean_target)
+            return True
+        except Exception as exc:
+            logger.warning("Failed to save user rule in PostgreSQL: %s", exc)
+            return False
 
     def generate_embedding(self, text: str) -> list[float] | None:
         """Generate a 768-dimensional embedding vector using Gemini."""

@@ -36,7 +36,7 @@ class EmailIdArgs(_Args):
 
 
 class FilterArgs(_Args):
-    filter_id: Literal["important_unread"]
+    filter_id: Literal["important_unread", "unread"]
     limit: int = Field(default=500, ge=1, le=500)
     exclude_senders: list[str] = Field(default_factory=list)
     exclude_keywords: list[str] = Field(default_factory=list)
@@ -57,7 +57,7 @@ TOOL_DECLARATIONS = [
     {"name": "search_emails", "description": "Find matching emails by topic, subject, sender, or date constraints. You can search for unread emails (set unread_only: true), date ranges using Gmail query syntax (e.g. after:2026/10/01 before:2026/11/01, newer_than:7d, newer_than:2d), or specific senders/topics. You can also exclude senders (exclude_senders) or exclude keywords (exclude_keywords).", "parameters_json_schema": {"type": "object", "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200}, "sender_only": {"type": "boolean"}, "unread_only": {"type": "boolean"}, "exclude_senders": {"type": "array", "items": {"type": "string"}}, "exclude_keywords": {"type": "array", "items": {"type": "string"}}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": ["query"], "additionalProperties": False}},
     {"name": "get_email", "description": "Retrieve one exact email by ID, or the selected/current email when email_id is omitted.", "parameters_json_schema": {"type": "object", "properties": {"email_id": {"type": "string", "maxLength": 256}}, "additionalProperties": False}},
     {"name": "review_email", "description": "Summarize and analyze one exact email, including priority and action items.", "parameters_json_schema": {"type": "object", "properties": {"email_id": {"type": "string", "maxLength": 256}}, "additionalProperties": False}},
-    {"name": "filter_unread_emails", "description": "Find unread important emails from the user's mailbox using priority signals. You can supply exclude_senders to omit specific senders/domains (e.g. ['chitkara.edu.in']), and exclude_keywords to omit specific topics or words (e.g. ['circular', 'newsletter', 'fee']).", "parameters_json_schema": {"type": "object", "properties": {"filter_id": {"type": "string", "enum": ["important_unread"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}, "exclude_senders": {"type": "array", "items": {"type": "string"}}, "exclude_keywords": {"type": "array", "items": {"type": "string"}}}, "required": ["filter_id"], "additionalProperties": False}},
+    {"name": "filter_unread_emails", "description": "Find unread emails from the user's mailbox. Use filter_id: 'unread' for all unread emails, or filter_id: 'important_unread' to filter by priority signals. You can supply exclude_senders to omit specific senders/domains (e.g. ['chitkara.edu.in']), and exclude_keywords to omit specific topics or words.", "parameters_json_schema": {"type": "object", "properties": {"filter_id": {"type": "string", "enum": ["important_unread", "unread"]}, "limit": {"type": "integer", "minimum": 1, "maximum": 500}, "exclude_senders": {"type": "array", "items": {"type": "string"}}, "exclude_keywords": {"type": "array", "items": {"type": "string"}}}, "required": ["filter_id"], "additionalProperties": False}},
 ]
 
 
@@ -196,21 +196,38 @@ class EmailAgentTools:
 
         if strategy == "signals":
             # 1. Candidate Pool: Fetch candidate unread emails directly from Gmail
-            # 100 emails ensures ultra-fast response (<3s) on cloud serverless and local environments
             pool_limit = min(settings.max_email_list_limit, 100)
             try:
                 unread_pool = provider.list_filtered_emails("unread", limit=pool_limit)
             except Exception:
                 unread_pool = provider.list_emails(limit=pool_limit)
 
-            # 2. Priority Engine: Filter by signals, respecting sender and keyword exclusions, and sort strictly by priority
-            # (Critical > High > Medium > Low, with newest timestamp within each tier)
+            # Retrieve dynamic custom user rules from PostgreSQL
+            user_email = request_context.get("user_email")
+            exclude_senders = list(args.exclude_senders)
+            exclude_keywords = list(args.exclude_keywords)
+            user_rules = request_context.get("user_rules") or []
+            priority_overrides = {}
+            for r in user_rules:
+                rtype = r.get("rule_type")
+                target = r.get("target_pattern")
+                plevel = r.get("priority_level")
+                if rtype == "exclude_sender" and target and target not in exclude_senders:
+                    exclude_senders.append(target)
+                elif rtype == "exclude_keyword" and target and target not in exclude_keywords:
+                    exclude_keywords.append(target)
+                elif rtype == "priority_override" and target and plevel:
+                    priority_overrides[target.lower()] = plevel
+
+            # 2. Priority Engine: Filter by signals, respecting sender and keyword exclusions
+            only_important = (args.filter_id == "important_unread")
             ranked = self.signal_engine.filter_and_rank_emails(
                 unread_pool,
-                only_important=True,
+                only_important=only_important,
                 limit=display_limit,
-                exclude_senders=args.exclude_senders,
-                exclude_keywords=args.exclude_keywords,
+                exclude_senders=exclude_senders,
+                exclude_keywords=exclude_keywords,
+                priority_overrides=priority_overrides,
             )
             emails = [item[0] for item in ranked]
             reviews = [{"email_id": item[0].id, "priority": item[1]} for item in ranked]
@@ -220,8 +237,8 @@ class EmailAgentTools:
                     "count": len(emails),
                     "strategy": "signals",
                     "pool_size": len(unread_pool),
-                    "exclude_senders": args.exclude_senders,
-                    "exclude_keywords": args.exclude_keywords,
+                    "exclude_senders": exclude_senders,
+                    "exclude_keywords": exclude_keywords,
                     "used_recent_window": False,
                 },
                 emails=emails,

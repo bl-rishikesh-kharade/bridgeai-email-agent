@@ -184,10 +184,12 @@ class EmailSignalEngine:
         limit: int = 10,
         exclude_senders: list[str] | None = None,
         exclude_keywords: list[str] | None = None,
+        priority_overrides: dict[str, str] | None = None,
     ) -> list[tuple[Email, PriorityLevel]]:
         """Filter emails by importance signals and sort them by Priority (Critical first)."""
         exclude_sender_terms = [t.strip().casefold() for t in (exclude_senders or []) if t.strip()]
         exclude_kw_terms = [t.strip().casefold() for t in (exclude_keywords or []) if t.strip()]
+        overrides = {k.strip().casefold(): v for k, v in (priority_overrides or {}).items()}
 
         # Filter out excluded senders/domains and excluded topic keywords before evaluating
         filtered_emails = []
@@ -203,6 +205,16 @@ class EmailSignalEngine:
             filtered_emails.append(email)
 
         evaluated = [self.evaluate_email(email) for email in filtered_emails]
+
+        # Apply custom priority overrides (e.g. forced Low priority for chitkara)
+        if overrides:
+            for match in evaluated:
+                sender_str = str(match.email.sender).casefold()
+                subject_str = str(match.email.subject).casefold()
+                for pattern, forced_priority in overrides.items():
+                    if pattern in sender_str or pattern in subject_str:
+                        match.priority = forced_priority  # type: ignore
+                        match.is_important = forced_priority in ("Critical", "High")
 
         if only_important:
             candidates = [m for m in evaluated if m.is_important]

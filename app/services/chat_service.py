@@ -113,28 +113,56 @@ class ChatService:
 
         user_email = request.get("user_email") or "default_user@bridgeai.local"
         memories = []
+        user_rules = []
+        if self.memory_service:
+            try:
+                user_rules = self.memory_service.get_user_rules(user_email)
+            except Exception as exc:
+                logger.debug("User rules retrieval skipped: %s", exc)
+
         if self.memory_service and raw_msg:
             try:
                 memories = self.memory_service.retrieve_relevant_memories(user_email, raw_msg, limit=3)
             except Exception as exc:
                 logger.debug("Memory retrieval skipped: %s", exc)
 
+            # Auto-detect preference statements (e.g. "emails from chitkara are not important")
+            low_msg = raw_msg.lower()
+            if any(phrase in low_msg for phrase in ["not important", "don't include", "dont include", "ignore", "skip", "low priority"]):
+                import re
+                match = re.search(r"(?:from|emails? from|regarding)\s+([a-zA-Z0-9_\-\.]+)", raw_msg, re.IGNORECASE)
+                if match:
+                    extracted_target = match.group(1).strip()
+                    if extracted_target.lower() not in ["me", "my", "you", "the", "an", "a", "all", "any"]:
+                        try:
+                            self.memory_service.save_user_rule(
+                                user_email=user_email,
+                                rule_type="priority_override",
+                                target_pattern=extracted_target,
+                                priority_level="Low",
+                            )
+                            # refresh rules
+                            user_rules = self.memory_service.get_user_rules(user_email)
+                        except Exception as exc:
+                            logger.debug("Auto rule save failed: %s", exc)
+
         enriched_request = dict(request)
         enriched_request["user_email"] = user_email
         enriched_request["memories"] = memories
+        enriched_request["user_rules"] = user_rules
 
         request_context = _observe_step("prepare_request", self._prepare_request)(enriched_request)
         preset_calls = request_context.get("tool_calls", [])
         if preset_calls:
             request_context.update(_observe_step("run_tools", self._run_tools)(request_context))
-            if not request_context.get("response") and request_context.get("filter_id") == "important_unread":
+            if not request_context.get("response") and request_context.get("filter_id") in ("important_unread", "unread"):
                 count = len(request_context.get("email_results", []))
                 if count:
-                    response = f"Found {count} unread important email(s)."
+                    response = f"Found {count} unread {'important ' if request_context.get('filter_id') == 'important_unread' else ''}email(s)."
                 elif request_context.get("used_recent_window"):
-                    response = "No unread important emails were found in the last 48 hours."
+                    response = "No unread emails were found in the last 48 hours."
                 else:
-                    response = "No unread important emails were found."
+                    response = "No unread emails were found."
                 request_context["response"] = response
 
         while not request_context.get("response"):
