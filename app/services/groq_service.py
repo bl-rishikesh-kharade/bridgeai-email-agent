@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import json
 import logging
 from time import perf_counter
+from typing import Any, Optional
 try:
     from groq import Groq
     HAS_GROQ = True
