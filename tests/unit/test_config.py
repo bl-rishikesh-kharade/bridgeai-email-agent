@@ -5,8 +5,8 @@ from app.core.config import Settings
 
 
 def test_production_requires_gemini_configuration():
-    with pytest.raises(ValidationError, match="GEMINI_API_KEY"):
-        Settings(_env_file=None, environment="production", gemini_api_key=None)
+    with pytest.raises(ValidationError, match="GEMINI_API_KEY or GROQ_API_KEY"):
+        Settings(_env_file=None, environment="production", gemini_api_key=None, groq_api_key=None)
 
 
 def test_local_production_configuration_is_accepted():

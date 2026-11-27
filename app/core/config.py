@@ -63,8 +63,10 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_configuration(self):
         if self.environment == "production":
-            if not self.gemini_api_key or not self.gemini_api_key.strip():
-                raise ValueError("Production requires GEMINI_API_KEY.")
+            has_gemini = bool(self.gemini_api_key and self.gemini_api_key.strip())
+            has_groq = bool(self.groq_api_key and self.groq_api_key.strip())
+            if not has_gemini and not has_groq:
+                raise ValueError("Production requires GEMINI_API_KEY or GROQ_API_KEY.")
         return self
 
     model_config = SettingsConfigDict(
